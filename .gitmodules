@@ -4,3 +4,6 @@
 [submodule "pkg/deviceid"]
 	path = pkg/deviceid
 	url = https://github.com/theblitlabs/deviceid.git
+[submodule "pkg/keystore"]
+	path = pkg/keystore
+	url = https://github.com/theblitlabs/keystore.git
