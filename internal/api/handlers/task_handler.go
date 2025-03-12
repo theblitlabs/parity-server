@@ -411,6 +411,10 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	log := logger.Get()
+	log.Info().
+		Str("request", fmt.Sprintf("%+v", req)).
+		Msg("Creating task")
 
 	if req.Title == "" || req.Description == "" {
 		http.Error(w, "Title and description are required", http.StatusBadRequest)
@@ -420,6 +424,12 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	deviceID := r.Header.Get("X-Device-ID")
 	if deviceID == "" {
 		http.Error(w, "Device ID is required", http.StatusBadRequest)
+		return
+	}
+
+	creatorAddress := r.Header.Get("X-Creator-Address")
+	if creatorAddress == "" {
+		http.Error(w, "Creator address is required", http.StatusBadRequest)
 		return
 	}
 
@@ -452,6 +462,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		Reward:          &req.Reward,
 		CreatorID:       creatorID,
 		CreatorDeviceID: deviceID,
+		CreatorAddress:  creatorAddress,
 		Status:          models.TaskStatusPending,
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
@@ -460,6 +471,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	log.Debug().
 		Str("task_id", taskID.String()).
 		Str("creator_device_id", task.CreatorDeviceID).
+		Str("creator_address", task.CreatorAddress).
 		Msg("Creating task")
 
 	if err := h.checkStakeBalance(task); err != nil {
@@ -535,16 +547,7 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var result models.TaskResult
-	if err := json.NewDecoder(r.Body).Decode(&result); err != nil {
-		log.Debug().Err(err).
-			Str("task", taskID).
-			Str("device", deviceID).
-			Msg("Invalid result payload")
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
+	// First get the task to ensure it exists and get its data
 	task, err := h.service.GetTask(r.Context(), taskID)
 	if err != nil {
 		log.Error().Err(err).
@@ -555,12 +558,22 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if task.CreatorID == uuid.Nil {
+	if task == nil {
 		log.Debug().
 			Str("task", taskID).
 			Str("device", deviceID).
-			Msg("Missing creator ID")
-		http.Error(w, "Creator ID required", http.StatusBadRequest)
+			Msg("Task not found")
+		http.Error(w, "Task not found", http.StatusNotFound)
+		return
+	}
+
+	var result models.TaskResult
+	if err := json.NewDecoder(r.Body).Decode(&result); err != nil {
+		log.Debug().Err(err).
+			Str("task", taskID).
+			Str("device", deviceID).
+			Msg("Invalid result payload")
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -574,24 +587,50 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Populate result with data from the existing task
 	result.TaskID = taskUUID
 	result.DeviceID = deviceID
-	result.CreatorAddress = task.CreatorAddress
 	result.CreatorDeviceID = task.CreatorDeviceID
 	result.SolverDeviceID = deviceID
+
+	// If creator address is not set in task, use creator device ID as temporary address
+	if task.CreatorAddress == "" {
+		result.CreatorAddress = task.CreatorDeviceID
+		log.Debug().
+			Str("task", taskID).
+			Str("creator_device", task.CreatorDeviceID).
+			Msg("Using creator device ID as temporary creator address")
+	} else {
+		result.CreatorAddress = task.CreatorAddress
+	}
+
+	// Use device ID as runner address
 	result.RunnerAddress = deviceID
+
 	result.CreatedAt = time.Now()
 	if task.Reward != nil {
 		result.Reward = *task.Reward
 	}
 
+	// Calculate device ID hash
 	hash := sha256.Sum256([]byte(deviceID))
 	result.DeviceIDHash = hex.EncodeToString(hash[:])
 	result.Clean()
 
+	log.Info().
+		Str("task", taskID).
+		Str("creator_address", result.CreatorAddress).
+		Str("creator_device", result.CreatorDeviceID).
+		Str("solver_device", result.SolverDeviceID).
+		Str("runner_address", result.RunnerAddress).
+		Msg("Saving task result")
+
 	if err := h.service.SaveTaskResult(r.Context(), &result); err != nil {
 		if strings.Contains(err.Error(), "invalid task result:") {
-			log.Debug().Err(err).Str("task", taskID).Msg("Invalid result")
+			log.Info().Err(err).
+				Str("task", taskID).
+				Str("error", err.Error()).
+				Msg("Invalid result")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -600,7 +639,11 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Info().Str("task", taskID).Msg("Task result saved")
+	log.Info().
+		Str("task", taskID).
+		Str("creator_device", task.CreatorDeviceID).
+		Str("solver_device", deviceID).
+		Msg("Task result saved")
 
 	h.NotifyTaskUpdate()
 
