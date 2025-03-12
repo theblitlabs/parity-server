@@ -14,13 +14,13 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/theblitlabs/gologger"
+	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/api"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 	"github.com/theblitlabs/parity-server/internal/config"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
 	"github.com/theblitlabs/parity-server/internal/services"
 	"github.com/theblitlabs/parity-server/pkg/database"
-	"github.com/theblitlabs/parity-server/pkg/keystore"
 	"github.com/theblitlabs/parity-server/pkg/stakewallet"
 	"github.com/theblitlabs/parity-server/pkg/wallet"
 )

@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/theblitlabs/parity-server/pkg/keystore"
+	"github.com/theblitlabs/keystore"
 )
 
 type Client struct {

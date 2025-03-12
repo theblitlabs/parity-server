@@ -9,9 +9,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/rs/zerolog"
 	"github.com/theblitlabs/gologger"
+	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/config"
 	"github.com/theblitlabs/parity-server/internal/models"
-	"github.com/theblitlabs/parity-server/pkg/keystore"
 	"github.com/theblitlabs/parity-server/pkg/stakewallet"
 	"github.com/theblitlabs/parity-server/pkg/wallet"
 )

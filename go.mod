@@ -6,6 +6,8 @@ toolchain go1.24.0
 
 replace github.com/theblitlabs/gologger => ./pkg/gologger
 
+replace github.com/theblitlabs/keystore => ./pkg/keystore
+
 require (
 	github.com/ethereum/go-ethereum v1.14.12
 	github.com/golang-jwt/jwt v3.2.2+incompatible
