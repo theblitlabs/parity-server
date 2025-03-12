@@ -1,3 +1,6 @@
 [submodule "pkg/gologger"]
 	path = pkg/gologger
 	url = https://github.com/theblitlabs/gologger.git
+[submodule "pkg/deviceid"]
+	path = pkg/deviceid
+	url = https://github.com/theblitlabs/deviceid.git
