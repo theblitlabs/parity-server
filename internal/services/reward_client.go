@@ -8,10 +8,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/rs/zerolog"
+	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/config"
 	"github.com/theblitlabs/parity-server/internal/models"
 	"github.com/theblitlabs/parity-server/pkg/keystore"
-	"github.com/theblitlabs/parity-server/pkg/logger"
 	"github.com/theblitlabs/parity-server/pkg/stakewallet"
 	"github.com/theblitlabs/parity-server/pkg/wallet"
 )
@@ -42,7 +42,7 @@ func (c *EthereumRewardClient) SetStakeWallet(sw StakeWallet) {
 }
 
 func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) error {
-	log := logger.WithComponent("rewards").With().
+	log := gologger.WithComponent("rewards").With().
 		Str("task", result.TaskID.String()).
 		Str("device", result.DeviceID).
 		Logger()

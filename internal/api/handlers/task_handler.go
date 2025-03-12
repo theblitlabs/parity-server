@@ -19,9 +19,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog/log"
 
+	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/models"
 	"github.com/theblitlabs/parity-server/internal/services"
-	"github.com/theblitlabs/parity-server/pkg/logger"
 	"github.com/theblitlabs/parity-server/pkg/stakewallet"
 )
 
@@ -103,7 +103,7 @@ func (h *TaskHandler) NotifyTaskUpdate() {
 }
 
 func (h *TaskHandler) notifyWebhooks() {
-	log := logger.WithComponent("webhook")
+	log := gologger.WithComponent("webhook")
 
 	select {
 	case <-h.stopCh:
@@ -253,7 +253,7 @@ func (h *TaskHandler) RegisterWebhook(w http.ResponseWriter, r *http.Request) {
 	h.webhooks[webhookID] = webhook
 	h.webhookMutex.Unlock()
 
-	log := logger.WithComponent("webhook")
+	log := gologger.WithComponent("webhook")
 	log.Info().
 		Str("webhook_id", webhookID).
 		Str("url", req.URL).
@@ -366,7 +366,7 @@ func (h *TaskHandler) UnregisterWebhook(w http.ResponseWriter, r *http.Request) 
 	delete(h.webhooks, webhookID)
 	h.webhookMutex.Unlock()
 
-	log := logger.WithComponent("webhook")
+	log := gologger.WithComponent("webhook")
 	log.Info().
 		Str("webhook_id", webhookID).
 		Str("url", webhook.URL).
@@ -411,7 +411,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	log := logger.Get()
+	log := gologger.Get()
 	log.Info().
 		Str("request", fmt.Sprintf("%+v", req)).
 		Msg("Creating task")
@@ -499,7 +499,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	log := logger.Get()
+	log := gologger.Get()
 
 	vars := mux.Vars(r)
 	taskID := vars["id"]
@@ -536,7 +536,7 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
-	log := logger.WithComponent("task_handler")
+	log := gologger.WithComponent("task_handler")
 	vars := mux.Vars(r)
 	taskID := vars["id"]
 	deviceID := r.Header.Get("X-Device-ID")
@@ -769,7 +769,7 @@ func (h *TaskHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) CleanupResources() {
-	log := logger.WithComponent("webhook")
+	log := gologger.WithComponent("webhook")
 
 	h.webhookMutex.RLock()
 	webhookCount := len(h.webhooks)

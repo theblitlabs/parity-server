@@ -7,7 +7,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/theblitlabs/parity-server/internal/config"
 	"github.com/theblitlabs/parity-server/pkg/keystore"
-	"github.com/theblitlabs/parity-server/pkg/logger"
 )
 
 // Define custom errors

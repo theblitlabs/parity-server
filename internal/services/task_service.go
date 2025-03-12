@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
+	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
 	"github.com/theblitlabs/parity-server/internal/models"
-	"github.com/theblitlabs/parity-server/pkg/logger"
 )
 
 var (
@@ -51,7 +51,7 @@ func (s *TaskService) SetRewardClient(client RewardClient) {
 }
 
 func (s *TaskService) CreateTask(ctx context.Context, task *models.Task) error {
-	log := logger.WithComponent("task_service")
+	log := gologger.WithComponent("task_service")
 
 	if err := task.Validate(); err != nil {
 		log.Error().Err(err).
@@ -97,7 +97,7 @@ func (s *TaskService) GetTask(ctx context.Context, id string) (*models.Task, err
 }
 
 func (s *TaskService) ListAvailableTasks(ctx context.Context) ([]*models.Task, error) {
-	log := logger.WithComponent("task_service")
+	log := gologger.WithComponent("task_service")
 
 	tasks, err := s.repo.ListByStatus(ctx, models.TaskStatusPending)
 	if err != nil {
@@ -116,7 +116,7 @@ func (s *TaskService) ListAvailableTasks(ctx context.Context) ([]*models.Task, e
 }
 
 func (s *TaskService) AssignTaskToRunner(ctx context.Context, taskID string, runnerID string) error {
-	log := logger.WithComponent("task_service")
+	log := gologger.WithComponent("task_service")
 
 	taskUUID, err := uuid.Parse(taskID)
 	if err != nil {
@@ -235,7 +235,7 @@ func (s *TaskService) GetTaskResult(ctx context.Context, taskID string) (*models
 }
 
 func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskResult) error {
-	log := logger.WithComponent("task_service")
+	log := gologger.WithComponent("task_service")
 
 	if result != nil {
 		resourceMetrics := ResourceMetrics{

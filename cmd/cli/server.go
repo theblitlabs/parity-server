@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/api"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 	"github.com/theblitlabs/parity-server/internal/config"
@@ -20,7 +21,6 @@ import (
 	"github.com/theblitlabs/parity-server/internal/services"
 	"github.com/theblitlabs/parity-server/pkg/database"
 	"github.com/theblitlabs/parity-server/pkg/keystore"
-	"github.com/theblitlabs/parity-server/pkg/logger"
 	"github.com/theblitlabs/parity-server/pkg/stakewallet"
 	"github.com/theblitlabs/parity-server/pkg/wallet"
 )
@@ -40,7 +40,7 @@ func verifyPortAvailable(host string, port string) error {
 }
 
 func RunServer() {
-	log := logger.Get()
+	log := gologger.Get()
 
 	cfg, err := config.LoadConfig("config/config.yaml")
 	if err != nil {

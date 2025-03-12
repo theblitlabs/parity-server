@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/theblitlabs/parity-server/pkg/logger"
 )
 
 type Keystore struct {
