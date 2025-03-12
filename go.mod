@@ -4,7 +4,7 @@ go 1.23.0
 
 toolchain go1.24.0
 
-replace github.com/theblitlabs/gologger => ../gologger
+replace github.com/theblitlabs/gologger => ./pkg/gologger
 
 require (
 	github.com/ethereum/go-ethereum v1.14.12
@@ -15,6 +15,7 @@ require (
 	github.com/rs/zerolog v1.32.0
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/viper v1.18.2
+	github.com/theblitlabs/gologger v0.0.0-00010101000000-000000000000
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gorm v1.25.12
 )
@@ -79,7 +80,6 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/supranational/blst v0.3.13 // indirect
-	github.com/theblitlabs/gologger v0.0.0-00010101000000-000000000000 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
