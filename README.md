@@ -128,16 +128,6 @@ parity-server <command> --help
 | GET    | /api/runners/stats               | Get runner statistics |
 | POST   | /api/runners/heartbeat           | Send heartbeat        |
 
-#### Wallet Endpoints
-
-| Method | Endpoint             | Description        |
-| ------ | -------------------- | ------------------ |
-| GET    | /api/wallet/balance  | Get wallet balance |
-| POST   | /api/wallet/stake    | Stake tokens       |
-| POST   | /api/wallet/unstake  | Unstake tokens     |
-| GET    | /api/wallet/rewards  | Get earned rewards |
-| POST   | /api/wallet/withdraw | Withdraw rewards   |
-
 ### Contributing
 
 1. Fork the repository
