@@ -1,0 +1,53 @@
+server:
+  port:
+  host:
+  endpoint:
+  websocket:
+    write_wait:
+    pong_wait:
+    max_message_size:
+
+database:
+  host:
+  port:
+  user:
+  password:
+  name:
+  sslmode:
+  max_open_conns:
+  max_idle_conns:
+  conn_max_lifetime:
+  url:
+
+ethereum:
+  rpc:
+  chain_id:
+  token_address:
+  stake_wallet_address:
+
+runner:
+  server_url:
+  websocket_url:
+  webhook_port: 8090
+  api_prefix:
+  docker:
+    memory_limit:
+    cpu_limit:
+    timeout:
+  ipfs:
+    image: "ipfs/kubo:latest"
+    api_port: 5001
+    gateway_port: 8081
+    swarm_port: 4001
+    data_dir:
+    sysctl:
+      - "net.core.rmem_max=7500000"
+      - "net.core.wmem_max=7500000"
+      - "net.core.rmem_default=7500000"
+      - "net.core.wmem_default=7500000"
+
+ipfs:
+  api_url: http://localhost:5001
+  udp_buffer:
+    receive_size: "7168KB"
+    send_size: "7168KB"

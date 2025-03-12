@@ -1,0 +1,82 @@
+# Binaries and executables
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+parity
+bin/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Log files
+*.log
+logs/
+
+# Database files
+*.db
+*.sqlite
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build directory
+build/
+dist/
+
+# Debug files
+debug/
+
+# Configuration files with sensitive data
+config/*.local.yaml
+config/dev.yaml
+config/prod.yaml
+
+# Temporary files
+tmp/
+temp/
+
+# Generated files
+*.generated.go
+*_mock.go
+
+# Air live reload
+tmp/
+
+# Node modules (if using any JavaScript tools)
+node_modules/
+
+# Local development files
+*.local 
+
+# Config files
+config/config.yaml
+
+# Cursor rules
+.cursor/

@@ -1,0 +1,52 @@
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+  disable:
+    - exhaustruct # Can be noisy
+    - wsl # Whitespace linting can be too strict
+    - gofmt # Temporarily disabled
+    - goimports # Temporarily disabled
+
+run:
+  timeout: 5m
+  concurrency: 4
+  issues-exit-code: 1
+  tests: true
+
+# Default is 3 lines of context, which is often insufficient
+output:
+  sort-results: true
+
+issues:
+  exclude-dirs:
+    - vendor
+    - node_modules
+    - tmp
+  # Maximum issues count per one linter
+  max-issues-per-linter: 0
+  # Maximum count of issues with the same text
+  max-same-issues: 0
+  exclude-use-default: false
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck # Allow unchecked errors in tests
+    - text: "Error return value of `.*(Close|Flush)` is not checked"
+      linters:
+        - errcheck
+    - text: "shadow: declaration of"
+      linters:
+        - govet
+
+# Settings for specific linters
+linters-settings:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: "github.com/theblitlabs/parity-server"
