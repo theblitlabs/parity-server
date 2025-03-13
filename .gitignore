@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-parity
+parity-server
 bin/
 
 # Test binary, built with `go test -c`
