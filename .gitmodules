@@ -4,3 +4,10 @@
 [submodule "pkg/keystore"]
 	path = pkg/keystore
 	url = https://github.com/theblitlabs/keystore.git
+[submodule "pkg/go-parity-wallet"]
+	path = pkg/go-parity-wallet
+	url = https://github.com/theblitlabs/go-parity-wallet.git
+[submodule "pkg/go-stake-client"]
+	path = pkg/go-stake-client
+	url = https://github.com/theblitlabs/go-stake-client.git
+
