@@ -27,7 +27,6 @@ type TaskResult struct {
 	SolverDeviceID  string          `json:"solver_device_id" gorm:"type:text"`
 	Reward          float64         `json:"reward" gorm:"type:decimal(20,8)"`
 	Metadata        json.RawMessage `json:"metadata" gorm:"type:jsonb;default:'{}'"`
-	IPFSCID         string          `json:"ipfs_cid" gorm:"type:text"`
 	CPUSeconds      float64         `json:"cpu_seconds" gorm:"type:decimal(20,8);default:0"`
 	EstimatedCycles uint64          `json:"estimated_cycles" gorm:"type:bigint;not null;default:0"`
 	MemoryGBHours   float64         `json:"memory_gb_hours" gorm:"type:decimal(20,8);default:0"`

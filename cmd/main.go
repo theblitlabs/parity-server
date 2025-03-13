@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/cmd/cli"
-	"github.com/theblitlabs/parity-server/pkg/logger"
 )
 
 var logMode string
@@ -18,9 +19,9 @@ var rootCmd = &cobra.Command{
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		switch logMode {
 		case "debug", "pretty", "info", "prod", "test":
-			logger.InitWithMode(logger.LogMode(logMode))
+			gologger.InitWithMode(gologger.LogMode(logMode))
 		default:
-			logger.InitWithMode(logger.LogModePretty)
+			gologger.InitWithMode(gologger.LogModePretty)
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
@@ -42,7 +43,13 @@ func ExecuteServer() error {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logMode, "log", "pretty", "Log mode: debug, pretty, info, prod, test")
+	authCmd.Flags().String("private-key", "", "Private key in hex format")
+	if err := authCmd.MarkFlagRequired("private-key"); err != nil {
+		log.Fatalf("Error marking flag required: %v", err)
+	}
+
 	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(authCmd)
 }
 
 var serverCmd = &cobra.Command{
@@ -50,5 +57,13 @@ var serverCmd = &cobra.Command{
 	Short: "Start the parity server",
 	Run: func(cmd *cobra.Command, args []string) {
 		cli.RunServer()
+	},
+}
+
+var authCmd = &cobra.Command{
+	Use:   "auth",
+	Short: "Authenticate with the server",
+	Run: func(cmd *cobra.Command, args []string) {
+		cli.RunAuth()
 	},
 }

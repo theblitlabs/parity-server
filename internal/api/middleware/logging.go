@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/theblitlabs/parity-server/pkg/logger"
+	"github.com/theblitlabs/gologger"
 )
 
 func Logging(next http.Handler) http.Handler {
@@ -16,7 +16,7 @@ func Logging(next http.Handler) http.Handler {
 		start := time.Now()
 		requestID := uuid.New().String()
 
-		log := logger.Get().With().
+		log := gologger.Get().With().
 			Str("request_id", requestID).
 			Str("method", r.Method).
 			Str("path", r.URL.Path).
