@@ -62,7 +62,6 @@ type Task struct {
 	Status          TaskStatus         `json:"status" gorm:"type:varchar(50)"`
 	Config          json.RawMessage    `json:"config" gorm:"type:jsonb"`
 	Environment     *EnvironmentConfig `json:"environment" gorm:"type:jsonb"`
-	Reward          float64            `json:"reward,omitempty" gorm:"type:decimal(20,8)"`
 	CreatorAddress  string             `json:"creator_address" gorm:"type:varchar(42)"`
 	CreatorDeviceID string             `json:"creator_device_id" gorm:"type:varchar(255)"`
 	RunnerID        *uuid.UUID         `json:"runner_id" gorm:"type:uuid"`

@@ -35,7 +35,6 @@ func (r *TaskResult) Clean() {
 	r.Output = strings.TrimSpace(r.Output)
 }
 
-// BeforeCreate GORM hook to set ID and ensure metadata is valid JSON
 func (r *TaskResult) BeforeCreate(tx *gorm.DB) error {
 	if r.ID == uuid.Nil {
 		r.ID = uuid.New()
@@ -43,7 +42,6 @@ func (r *TaskResult) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// Validate checks if all required fields are present and valid
 func (r *TaskResult) Validate() error {
 	if r.ID == uuid.Nil {
 		return errors.New("result ID is required")
@@ -75,7 +73,6 @@ func (r *TaskResult) Validate() error {
 	return nil
 }
 
-// NewTaskResult creates a new task result with a generated UUID
 func NewTaskResult() *TaskResult {
 	return &TaskResult{
 		ID: uuid.New(),

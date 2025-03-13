@@ -222,7 +222,6 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	task.Type = req.Type
 	task.Config = req.Config
 	task.Environment = req.Environment
-	task.Reward = 0.0
 	task.CreatorDeviceID = deviceID
 	task.CreatorAddress = creatorAddress
 	task.Nonce = nonce
@@ -360,11 +359,8 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 		result.CreatorAddress = task.CreatorAddress
 	}
 
-	// Use device ID as runner address
 	result.RunnerAddress = deviceID
-
 	result.CreatedAt = time.Now()
-	result.Reward = task.Reward
 
 	// Calculate device ID hash
 	hash := sha256.Sum256([]byte(deviceID))
@@ -409,21 +405,13 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 		return fmt.Errorf("stake wallet not initialized")
 	}
 
-	rewardWei := new(big.Float).Mul(
-		new(big.Float).SetFloat64(task.Reward),
-		new(big.Float).SetFloat64(1e18),
-	)
-	rewardAmount, _ := rewardWei.Int(nil)
-
 	stakeInfo, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
 	if err != nil || !stakeInfo.Exists {
 		return fmt.Errorf("creator device not registered - please stake first")
 	}
 
-	if stakeInfo.Amount.Cmp(rewardAmount) < 0 {
-		return fmt.Errorf("insufficient stake balance: need %v PRTY, has %v PRTY",
-			task.Reward,
-			new(big.Float).Quo(new(big.Float).SetInt(stakeInfo.Amount), big.NewFloat(1e18)))
+	if stakeInfo.Amount.Cmp(big.NewInt(0)) <= 0 {
+		return fmt.Errorf("no stake found - please stake some PRTY first")
 	}
 
 	return nil

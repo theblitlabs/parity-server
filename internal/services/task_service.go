@@ -160,12 +160,16 @@ func (s *TaskService) GetTaskReward(ctx context.Context, taskID string) (float64
 		return 0, fmt.Errorf("invalid task ID format: %w", err)
 	}
 
-	task, err := s.repo.Get(ctx, taskUUID)
+	result, err := s.repo.GetTaskResult(ctx, taskUUID)
 	if err != nil {
 		return 0, err
 	}
 
-	return task.Reward, nil
+	if result == nil {
+		return 0, fmt.Errorf("task result not found")
+	}
+
+	return result.Reward, nil
 }
 
 func (s *TaskService) GetTasks(ctx context.Context) ([]models.Task, error) {
@@ -264,20 +268,22 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		Str("nonce", task.Nonce).
 		Msg("Task result verification passed")
 
-	reward := 0.0
+	// Calculate reward based on resource metrics
 	if result.ExitCode == 0 {
-		reward = s.rewardCalculator.CalculateReward(ResourceMetrics{
+		metrics := ResourceMetrics{
 			CPUSeconds:      result.CPUSeconds,
 			EstimatedCycles: result.EstimatedCycles,
 			MemoryGBHours:   result.MemoryGBHours,
 			StorageGB:       result.StorageGB,
 			NetworkDataGB:   result.NetworkDataGB,
-		})
+		}
+		result.Reward = s.rewardCalculator.CalculateReward(metrics)
 		task.Status = models.TaskStatusCompleted
 		now := time.Now()
 		task.CompletedAt = &now
 	} else {
 		task.Status = models.TaskStatusFailed
+		result.Reward = 0
 	}
 
 	if err := s.repo.Update(ctx, task); err != nil {
@@ -292,7 +298,7 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		if err := s.rewardClient.DistributeRewards(result); err != nil {
 			log.Error().Err(err).
 				Str("task_id", result.TaskID.String()).
-				Float64("reward", reward).
+				Float64("reward", result.Reward).
 				Msg("Failed to distribute reward")
 			return fmt.Errorf("failed to distribute reward: %w", err)
 		}
