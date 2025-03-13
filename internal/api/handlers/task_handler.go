@@ -14,15 +14,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog/log"
 
+	stakeclient "github.com/theblitlabs/go-stake-client"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/models"
 	"github.com/theblitlabs/parity-server/internal/services"
-	"github.com/theblitlabs/parity-server/pkg/stakewallet"
 )
 
 type WebhookRegistration struct {
@@ -69,7 +68,7 @@ type TaskService interface {
 
 type TaskHandler struct {
 	service      TaskService
-	stakeWallet  stakewallet.StakeWallet
+	stakeWallet  *stakeclient.StakeWallet
 	taskUpdateCh chan struct{}
 	webhooks     map[string]WebhookRegistration
 	webhookMutex sync.RWMutex
@@ -84,7 +83,7 @@ func NewTaskHandler(service TaskService) *TaskHandler {
 	}
 }
 
-func (h *TaskHandler) SetStakeWallet(wallet stakewallet.StakeWallet) {
+func (h *TaskHandler) SetStakeWallet(wallet *stakeclient.StakeWallet) {
 	h.stakeWallet = wallet
 }
 
@@ -661,7 +660,7 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 	)
 	rewardAmount, _ := rewardWei.Int(nil)
 
-	stakeInfo, err := h.stakeWallet.GetStakeInfo(&bind.CallOpts{}, task.CreatorDeviceID)
+	stakeInfo, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
 	if err != nil || !stakeInfo.Exists {
 		return fmt.Errorf("creator device not registered - please stake first")
 	}

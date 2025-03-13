@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -13,16 +12,17 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	paritywallet "github.com/theblitlabs/go-parity-wallet"
+	stakeclient "github.com/theblitlabs/go-stake-client"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/api"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 	"github.com/theblitlabs/parity-server/internal/config"
+	"github.com/theblitlabs/parity-server/internal/database"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
 	"github.com/theblitlabs/parity-server/internal/services"
-	"github.com/theblitlabs/parity-server/pkg/database"
-	"github.com/theblitlabs/parity-server/pkg/stakewallet"
-	"github.com/theblitlabs/parity-server/pkg/wallet"
 )
 
 func verifyPortAvailable(host string, port string) error {
@@ -79,23 +79,32 @@ func RunServer() {
 	}()
 	taskHandler.SetStopChannel(internalStopCh)
 
-	privateKey, err := keystore.GetPrivateKey()
+	ks, err := keystore.NewKeystore(keystore.Config{})
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create keystore")
+	}
+
+	privateKey, err := ks.LoadPrivateKey()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to get private key - please authenticate first")
 	}
 
-	client, err := wallet.NewClientWithKey(
+	// Create wallet client
+	walletClient, err := paritywallet.NewClientWithKey(
 		cfg.Ethereum.RPC,
-		big.NewInt(cfg.Ethereum.ChainID),
-		privateKey,
+		cfg.Ethereum.ChainID,
+		common.Bytes2Hex(crypto.FromECDSA(privateKey)),
+		common.HexToAddress(cfg.Ethereum.TokenAddress),
 	)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create wallet client")
 	}
 
-	stakeWallet, err := stakewallet.NewStakeWallet(
+	// Create stake wallet instance
+	stakeWallet, err := stakeclient.NewStakeWallet(
+		walletClient,
 		common.HexToAddress(cfg.Ethereum.StakeWalletAddress),
-		client,
+		common.HexToAddress(cfg.Ethereum.TokenAddress),
 	)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create stake wallet")

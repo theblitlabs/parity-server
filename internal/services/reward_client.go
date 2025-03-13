@@ -7,13 +7,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/rs/zerolog"
+	paritywallet "github.com/theblitlabs/go-parity-wallet"
+	stakeclient "github.com/theblitlabs/go-stake-client"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/config"
 	"github.com/theblitlabs/parity-server/internal/models"
-	"github.com/theblitlabs/parity-server/pkg/stakewallet"
-	"github.com/theblitlabs/parity-server/pkg/wallet"
 )
 
 type RewardClient interface {
@@ -21,8 +22,8 @@ type RewardClient interface {
 }
 
 type StakeWallet interface {
-	GetStakeInfo(opts *bind.CallOpts, deviceID string) (stakewallet.StakeInfo, error)
-	TransferPayment(opts *bind.TransactOpts, creator string, runner string, amount *big.Int) error
+	GetStakeInfo(deviceID string) (stakeclient.StakeInfo, error)
+	TransferPayment(creator string, runner string, amount *big.Int) error
 }
 
 type EthereumRewardClient struct {
@@ -58,16 +59,22 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 		return c.distributeWithMockWallet(log, result)
 	}
 
-	privateKey, err := keystore.GetPrivateKey()
+	ks, err := keystore.NewKeystore(keystore.Config{})
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create keystore")
+	}
+
+	privateKey, err := ks.LoadPrivateKey()
 	if err != nil {
 		log.Error().Err(err).Msg("Auth required")
 		return fmt.Errorf("auth required: %w", err)
 	}
 
-	client, err := wallet.NewClientWithKey(
+	client, err := paritywallet.NewClientWithKey(
 		c.cfg.Ethereum.RPC,
-		big.NewInt(c.cfg.Ethereum.ChainID),
-		privateKey,
+		int64(c.cfg.Ethereum.ChainID),
+		common.Bytes2Hex(crypto.FromECDSA(privateKey)),
+		common.HexToAddress(c.cfg.Ethereum.TokenAddress),
 	)
 	if err != nil {
 		log.Error().Err(err).Msg("Client creation failed")
@@ -81,7 +88,11 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 		Msg("Client initialized")
 
 	stakeWalletAddr := common.HexToAddress(c.cfg.Ethereum.StakeWalletAddress)
-	stakeWallet, err := stakewallet.NewStakeWallet(stakeWalletAddr, client)
+	stakeWallet, err := stakeclient.NewStakeWallet(
+		client,
+		stakeWalletAddr,
+		common.HexToAddress(c.cfg.Ethereum.TokenAddress),
+	)
 	if err != nil {
 		log.Error().Err(err).
 			Str("addr", stakeWalletAddr.Hex()).
@@ -89,7 +100,7 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 		return fmt.Errorf("stake wallet init failed: %w", err)
 	}
 
-	stakeInfo, err := stakeWallet.GetStakeInfo(&bind.CallOpts{}, result.DeviceID)
+	stakeInfo, err := stakeWallet.GetStakeInfo(result.DeviceID)
 	if err != nil {
 		log.Error().Err(err).Msg("Stake info check failed")
 		return nil
@@ -101,14 +112,6 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 	}
 
 	log.Debug().Str("amount", stakeInfo.Amount.String()).Msg("Found stake")
-
-	txOpts, err := client.GetTransactOpts()
-	if err != nil {
-		log.Error().Err(err).
-			Str("wallet", client.Address().Hex()).
-			Msg("TX opts failed")
-		return fmt.Errorf("tx opts failed: %w", err)
-	}
 
 	rewardWei := new(big.Float).Mul(
 		new(big.Float).SetFloat64(result.Reward),
@@ -122,7 +125,6 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 		Msg("Initiating transfer")
 
 	tx, err := stakeWallet.TransferPayment(
-		txOpts,
 		result.CreatorDeviceID,
 		result.DeviceID,
 		rewardAmount,
@@ -166,7 +168,7 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 }
 
 func (c *EthereumRewardClient) distributeWithMockWallet(log zerolog.Logger, result *models.TaskResult) error {
-	stakeInfo, err := c.stakeWallet.GetStakeInfo(&bind.CallOpts{}, result.DeviceID)
+	stakeInfo, err := c.stakeWallet.GetStakeInfo(result.DeviceID)
 	if err != nil {
 		log.Error().Err(err).Msg("Stake info check failed")
 		return nil
@@ -183,7 +185,7 @@ func (c *EthereumRewardClient) distributeWithMockWallet(log zerolog.Logger, resu
 	)
 	rewardAmount, _ := rewardWei.Int(nil)
 
-	if err := c.stakeWallet.TransferPayment(nil, result.CreatorAddress, result.DeviceID, rewardAmount); err != nil {
+	if err := c.stakeWallet.TransferPayment(result.CreatorAddress, result.DeviceID, rewardAmount); err != nil {
 		log.Error().Err(err).
 			Str("reward", rewardAmount.String()).
 			Msg("Transfer failed")
