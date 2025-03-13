@@ -239,13 +239,11 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		return fmt.Errorf("invalid task result: result cannot be nil")
 	}
 
-	// Get the task to verify nonce
 	task, err := s.repo.Get(ctx, result.TaskID)
 	if err != nil {
 		return fmt.Errorf("failed to get task: %w", err)
 	}
 
-	// Verify nonce in task output
 	if !s.nonceService.VerifyNonce(task.Nonce, result.Output) {
 		log.Error().
 			Str("task_id", result.TaskID.String()).
@@ -267,7 +265,6 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		Str("nonce", task.Nonce).
 		Msg("Task result verification passed")
 
-	// Calculate reward based on exit code
 	reward := 0.0
 	if result.ExitCode == 0 {
 		reward = s.rewardCalculator.CalculateReward(ResourceMetrics{
@@ -284,17 +281,14 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		task.Status = models.TaskStatusFailed
 	}
 
-	// Update task status and reward
 	if err := s.repo.Update(ctx, task); err != nil {
 		return fmt.Errorf("failed to update task status: %w", err)
 	}
 
-	// Save the task result
 	if err := s.repo.SaveTaskResult(ctx, result); err != nil {
 		return fmt.Errorf("failed to save task result: %w", err)
 	}
 
-	// Distribute reward if task was successful
 	if result.ExitCode == 0 && s.rewardClient != nil {
 		if err := s.rewardClient.DistributeRewards(result); err != nil {
 			log.Error().Err(err).
