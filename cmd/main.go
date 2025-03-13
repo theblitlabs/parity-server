@@ -42,7 +42,13 @@ func ExecuteServer() error {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logMode, "log", "pretty", "Log mode: debug, pretty, info, prod, test")
+	authCmd.Flags().String("private-key", "", "Private key in hex format")
+	if err := authCmd.MarkFlagRequired("private-key"); err != nil {
+
+	}
+
 	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(authCmd)
 }
 
 var serverCmd = &cobra.Command{
@@ -50,5 +56,13 @@ var serverCmd = &cobra.Command{
 	Short: "Start the parity server",
 	Run: func(cmd *cobra.Command, args []string) {
 		cli.RunServer()
+	},
+}
+
+var authCmd = &cobra.Command{
+	Use:   "auth",
+	Short: "Authenticate with the server",
+	Run: func(cmd *cobra.Command, args []string) {
+		cli.RunAuth()
 	},
 }
