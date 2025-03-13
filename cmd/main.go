@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -44,7 +45,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&logMode, "log", "pretty", "Log mode: debug, pretty, info, prod, test")
 	authCmd.Flags().String("private-key", "", "Private key in hex format")
 	if err := authCmd.MarkFlagRequired("private-key"); err != nil {
-
+		log.Fatalf("Error marking flag required: %v", err)
 	}
 
 	rootCmd.AddCommand(serverCmd)
