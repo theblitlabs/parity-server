@@ -250,7 +250,6 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 			Str("nonce", task.Nonce).
 			Msg("Task result verification failed: nonce not found in output")
 
-		// Mark task as not verified
 		task.Status = models.TaskStatusNotVerified
 		if err := s.repo.Update(ctx, task); err != nil {
 			log.Error().Err(err).
