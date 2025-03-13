@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,12 +17,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	"github.com/rs/zerolog/log"
 
 	stakeclient "github.com/theblitlabs/go-stake-client"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/models"
-	"github.com/theblitlabs/parity-server/internal/services"
 )
 
 type WebhookRegistration struct {
@@ -92,6 +91,7 @@ func (h *TaskHandler) SetStopChannel(stopCh chan struct{}) {
 }
 
 func (h *TaskHandler) NotifyTaskUpdate() {
+	log := gologger.Get()
 	select {
 	case h.taskUpdateCh <- struct{}{}:
 		go h.notifyWebhooks()
@@ -380,6 +380,7 @@ func (h *TaskHandler) UnregisterWebhook(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *TaskHandler) GetTaskResult(w http.ResponseWriter, r *http.Request) {
+	log := gologger.Get()
 	vars := mux.Vars(r)
 	taskID := vars["id"]
 	if taskID == "" {
@@ -402,6 +403,14 @@ func (h *TaskHandler) GetTaskResult(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		log.Error().Err(err).Str("task_id", taskID).Msg("Failed to encode task result response")
 	}
+}
+
+func generateNonce() string {
+	nonceBytes := make([]byte, 32)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		nonceBytes = []byte(fmt.Sprintf("%d-%s", time.Now().UnixNano(), uuid.New().String()))
+	}
+	return hex.EncodeToString(nonceBytes)
 }
 
 func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
@@ -448,29 +457,28 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	taskID := uuid.New()
-	creatorID := uuid.New()
-
-	task := &models.Task{
-		ID:              taskID,
-		Title:           req.Title,
-		Description:     req.Description,
-		Type:            req.Type,
-		Config:          req.Config,
-		Environment:     req.Environment,
-		Reward:          &req.Reward,
-		CreatorID:       creatorID,
-		CreatorDeviceID: deviceID,
-		CreatorAddress:  creatorAddress,
-		Status:          models.TaskStatusPending,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-	}
+	nonce := generateNonce()
 
 	log.Debug().
-		Str("task_id", taskID.String()).
+		Str("nonce", nonce).
+		Msg("Generated nonce")
+
+	task := models.NewTask()
+	task.Title = req.Title
+	task.Description = req.Description
+	task.Type = req.Type
+	task.Config = req.Config
+	task.Environment = req.Environment
+	task.Reward = 0.0
+	task.CreatorDeviceID = deviceID
+	task.CreatorAddress = creatorAddress
+	task.Nonce = nonce
+
+	log.Debug().
+		Str("task_id", task.ID.String()).
 		Str("creator_device_id", task.CreatorDeviceID).
 		Str("creator_address", task.CreatorAddress).
+		Str("nonce", task.Nonce).
 		Msg("Creating task")
 
 	if err := h.checkStakeBalance(task); err != nil {
@@ -515,10 +523,6 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.AssignTaskToRunner(ctx, taskID, runnerID); err != nil {
 		log.Error().Err(err).Str("task_id", taskID).Msg("Failed to assign task")
-		if err == services.ErrTaskNotFound {
-			http.Error(w, "Task not found", http.StatusNotFound)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -607,9 +611,7 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 	result.RunnerAddress = deviceID
 
 	result.CreatedAt = time.Now()
-	if task.Reward != nil {
-		result.Reward = *task.Reward
-	}
+	result.Reward = task.Reward
 
 	// Calculate device ID hash
 	hash := sha256.Sum256([]byte(deviceID))
@@ -655,7 +657,7 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 	}
 
 	rewardWei := new(big.Float).Mul(
-		new(big.Float).SetFloat64(*task.Reward),
+		new(big.Float).SetFloat64(task.Reward),
 		new(big.Float).SetFloat64(1e18),
 	)
 	rewardAmount, _ := rewardWei.Int(nil)
@@ -675,6 +677,7 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 }
 
 func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
+	log := gologger.Get()
 	tasks, err := h.service.GetTasks(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -687,13 +690,10 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
+	log := gologger.Get()
 	taskID := mux.Vars(r)["id"]
 	task, err := h.service.GetTask(r.Context(), taskID)
 	if err != nil {
-		if err == services.ErrTaskNotFound {
-			http.Error(w, "Task not found", http.StatusNotFound)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -717,10 +717,6 @@ func (h *TaskHandler) AssignTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.AssignTaskToRunner(r.Context(), taskID, req.RunnerID); err != nil {
-		if err == services.ErrTaskNotFound {
-			http.Error(w, "Task not found", http.StatusNotFound)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -729,13 +725,10 @@ func (h *TaskHandler) AssignTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) GetTaskReward(w http.ResponseWriter, r *http.Request) {
+	log := gologger.Get()
 	taskID := mux.Vars(r)["id"]
 	reward, err := h.service.GetTaskReward(r.Context(), taskID)
 	if err != nil {
-		if err == services.ErrTaskNotFound {
-			http.Error(w, "Task not found", http.StatusNotFound)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -746,6 +739,7 @@ func (h *TaskHandler) GetTaskReward(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) ListAvailableTasks(w http.ResponseWriter, r *http.Request) {
+	log := gologger.Get()
 	tasks, err := h.service.ListAvailableTasks(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

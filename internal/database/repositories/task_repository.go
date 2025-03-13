@@ -31,7 +31,6 @@ func (r *TaskRepository) Create(ctx context.Context, task *models.Task) error {
 
 	dbTask := models.Task{
 		ID:              task.ID,
-		CreatorID:       task.CreatorID,
 		CreatorAddress:  task.CreatorAddress,
 		CreatorDeviceID: task.CreatorDeviceID,
 		Title:           task.Title,
@@ -41,6 +40,7 @@ func (r *TaskRepository) Create(ctx context.Context, task *models.Task) error {
 		Status:          task.Status,
 		Reward:          task.Reward,
 		Environment:     task.Environment,
+		Nonce:           task.Nonce,
 		CreatedAt:       task.CreatedAt,
 		UpdatedAt:       task.UpdatedAt,
 	}
@@ -61,7 +61,6 @@ func (r *TaskRepository) Get(ctx context.Context, id uuid.UUID) (*models.Task, e
 
 	task := &models.Task{
 		ID:              dbTask.ID,
-		CreatorID:       dbTask.CreatorID,
 		CreatorAddress:  dbTask.CreatorAddress,
 		CreatorDeviceID: dbTask.CreatorDeviceID,
 		Title:           dbTask.Title,
@@ -70,6 +69,7 @@ func (r *TaskRepository) Get(ctx context.Context, id uuid.UUID) (*models.Task, e
 		Status:          dbTask.Status,
 		Reward:          dbTask.Reward,
 		RunnerID:        dbTask.RunnerID,
+		Nonce:           dbTask.Nonce,
 		CreatedAt:       dbTask.CreatedAt,
 		UpdatedAt:       dbTask.UpdatedAt,
 		CompletedAt:     dbTask.CompletedAt,
@@ -118,7 +118,6 @@ func (r *TaskRepository) ListByStatus(ctx context.Context, status models.TaskSta
 	for i, dbTask := range dbTasks {
 		tasks[i] = &models.Task{
 			ID:              dbTask.ID,
-			CreatorID:       dbTask.CreatorID,
 			CreatorAddress:  dbTask.CreatorAddress,
 			CreatorDeviceID: dbTask.CreatorDeviceID,
 			Title:           dbTask.Title,
@@ -155,7 +154,6 @@ func (r *TaskRepository) List(ctx context.Context, limit, offset int) ([]*models
 	for i, dbTask := range dbTasks {
 		tasks[i] = &models.Task{
 			ID:              dbTask.ID,
-			CreatorID:       dbTask.CreatorID,
 			CreatorAddress:  dbTask.CreatorAddress,
 			CreatorDeviceID: dbTask.CreatorDeviceID,
 			Title:           dbTask.Title,
@@ -164,6 +162,7 @@ func (r *TaskRepository) List(ctx context.Context, limit, offset int) ([]*models
 			Status:          dbTask.Status,
 			Reward:          dbTask.Reward,
 			RunnerID:        dbTask.RunnerID,
+			Nonce:           dbTask.Nonce,
 			CreatedAt:       dbTask.CreatedAt,
 			UpdatedAt:       dbTask.UpdatedAt,
 			CompletedAt:     dbTask.CompletedAt,
@@ -192,7 +191,6 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 	for i, dbTask := range dbTasks {
 		tasks[i] = models.Task{
 			ID:              dbTask.ID,
-			CreatorID:       dbTask.CreatorID,
 			CreatorAddress:  dbTask.CreatorAddress,
 			CreatorDeviceID: dbTask.CreatorDeviceID,
 			Title:           dbTask.Title,
@@ -201,6 +199,7 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 			Status:          dbTask.Status,
 			Reward:          dbTask.Reward,
 			RunnerID:        dbTask.RunnerID,
+			Nonce:           dbTask.Nonce,
 			CreatedAt:       dbTask.CreatedAt,
 			UpdatedAt:       dbTask.UpdatedAt,
 			CompletedAt:     dbTask.CompletedAt,
@@ -241,17 +240,6 @@ func (r *TaskRepository) SaveTaskResult(ctx context.Context, result *models.Task
 		NetworkDataGB:   result.NetworkDataGB,
 	}
 
-	// Convert metadata to JSON
-	if result.Metadata != nil {
-		data, err := json.Marshal(result.Metadata)
-		if err != nil {
-			return fmt.Errorf("failed to marshal metadata: %w", err)
-		}
-		dbResult.Metadata = data
-	} else {
-		dbResult.Metadata = json.RawMessage("{}")
-	}
-
 	return r.db.WithContext(ctx).Create(dbResult).Error
 }
 
@@ -285,7 +273,6 @@ func (r *TaskRepository) GetTaskResult(ctx context.Context, taskID uuid.UUID) (*
 		MemoryGBHours:   dbResult.MemoryGBHours,
 		StorageGB:       dbResult.StorageGB,
 		NetworkDataGB:   dbResult.NetworkDataGB,
-		Metadata:        dbResult.Metadata,
 	}
 
 	return taskResult, nil

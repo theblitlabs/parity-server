@@ -163,10 +163,7 @@ func (s *TaskService) GetTaskReward(ctx context.Context, taskID string) (float64
 		return 0, err
 	}
 
-	if task.Reward == nil {
-		return 0, nil
-	}
-	return *task.Reward, nil
+	return task.Reward, nil
 }
 
 func (s *TaskService) GetTasks(ctx context.Context) ([]models.Task, error) {
@@ -236,40 +233,51 @@ func (s *TaskService) GetTaskResult(ctx context.Context, taskID string) (*models
 func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskResult) error {
 	log := gologger.WithComponent("task_service")
 
-	if result != nil {
-		resourceMetrics := ResourceMetrics{
-			CPUSeconds:      result.CPUSeconds,
-			EstimatedCycles: result.EstimatedCycles,
-			MemoryGBHours:   result.MemoryGBHours,
-			StorageGB:       result.StorageGB,
-			NetworkDataGB:   result.NetworkDataGB,
-		}
-		reward := s.rewardCalculator.CalculateReward(resourceMetrics)
-		result.Reward = reward
-
-		task, err := s.repo.Get(ctx, result.TaskID)
-		if err != nil {
-			log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to get task for reward update")
-			return fmt.Errorf("failed to get task for reward update: %w", err)
-		}
-
-		task.Reward = &reward
-		if err := s.repo.Update(ctx, task); err != nil {
-			log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to update task reward")
-			return fmt.Errorf("failed to update task reward: %w", err)
-		}
-	}
-
+	// Validate result first before any processing
 	if err := result.Validate(); err != nil {
 		log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Task result validation failed")
 		return fmt.Errorf("invalid task result: %w", err)
 	}
 
+	// Calculate reward and update task
+	resourceMetrics := ResourceMetrics{
+		CPUSeconds:      result.CPUSeconds,
+		EstimatedCycles: result.EstimatedCycles,
+		MemoryGBHours:   result.MemoryGBHours,
+		StorageGB:       result.StorageGB,
+		NetworkDataGB:   result.NetworkDataGB,
+	}
+	reward := s.rewardCalculator.CalculateReward(resourceMetrics)
+	result.Reward = reward
+
+	task, err := s.repo.Get(ctx, result.TaskID)
+	if err != nil {
+		log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to get task for reward update")
+		return fmt.Errorf("failed to get task for reward update: %w", err)
+	}
+
+	// Only update task status if the result indicates success
+	if result.ExitCode == 0 {
+		task.Status = models.TaskStatusCompleted
+		now := time.Now()
+		task.CompletedAt = &now
+	} else {
+		task.Status = models.TaskStatusFailed
+	}
+	task.Reward = reward
+
+	if err := s.repo.Update(ctx, task); err != nil {
+		log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to update task reward and status")
+		return fmt.Errorf("failed to update task reward and status: %w", err)
+	}
+
+	// Save the task result
 	if err := s.repo.SaveTaskResult(ctx, result); err != nil {
 		log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to save task result")
 		return fmt.Errorf("failed to save task result: %w", err)
 	}
 
+	// Distribute rewards only for successful tasks
 	if result.ExitCode == 0 && s.rewardClient != nil {
 		if err := s.rewardClient.DistributeRewards(result); err != nil {
 			log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to distribute rewards")
