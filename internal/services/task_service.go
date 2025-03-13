@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/ipfs/go-cid"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
 	"github.com/theblitlabs/parity-server/internal/models"
@@ -265,14 +264,6 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Task result validation failed")
 		return fmt.Errorf("invalid task result: %w", err)
 	}
-
-	cid, err := cid.Parse(result.IPFSCID)
-	if err != nil {
-		log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to store task result in IPFS")
-		return fmt.Errorf("failed to store result in IPFS: %w", err)
-	}
-
-	result.IPFSCID = cid.String()
 
 	if err := s.repo.SaveTaskResult(ctx, result); err != nil {
 		log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to save task result")
