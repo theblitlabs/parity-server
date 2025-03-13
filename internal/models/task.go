@@ -13,10 +13,11 @@ type TaskStatus string
 type TaskType string
 
 const (
-	TaskStatusPending   TaskStatus = "pending"
-	TaskStatusRunning   TaskStatus = "running"
-	TaskStatusCompleted TaskStatus = "completed"
-	TaskStatusFailed    TaskStatus = "failed"
+	TaskStatusPending     TaskStatus = "pending"
+	TaskStatusRunning     TaskStatus = "running"
+	TaskStatusCompleted   TaskStatus = "completed"
+	TaskStatusFailed      TaskStatus = "failed"
+	TaskStatusNotVerified TaskStatus = "not_verified"
 )
 
 const (

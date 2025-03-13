@@ -1,18 +1,15 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,6 +18,7 @@ import (
 	stakeclient "github.com/theblitlabs/go-stake-client"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/models"
+	"github.com/theblitlabs/parity-server/internal/services"
 )
 
 type WebhookRegistration struct {
@@ -66,19 +64,16 @@ type TaskService interface {
 }
 
 type TaskHandler struct {
-	service      TaskService
-	stakeWallet  *stakeclient.StakeWallet
-	taskUpdateCh chan struct{}
-	webhooks     map[string]WebhookRegistration
-	webhookMutex sync.RWMutex
-	stopCh       chan struct{}
+	service        TaskService
+	stakeWallet    *stakeclient.StakeWallet
+	webhookService *services.WebhookService
+	stopCh         chan struct{}
 }
 
-func NewTaskHandler(service TaskService) *TaskHandler {
+func NewTaskHandler(service TaskService, webhookService *services.WebhookService) *TaskHandler {
 	return &TaskHandler{
-		service:      service,
-		webhooks:     make(map[string]WebhookRegistration),
-		taskUpdateCh: make(chan struct{}, 100),
+		service:        service,
+		webhookService: webhookService,
 	}
 }
 
@@ -88,261 +83,32 @@ func (h *TaskHandler) SetStakeWallet(wallet *stakeclient.StakeWallet) {
 
 func (h *TaskHandler) SetStopChannel(stopCh chan struct{}) {
 	h.stopCh = stopCh
+	h.webhookService.SetStopChannel(stopCh)
 }
 
 func (h *TaskHandler) NotifyTaskUpdate() {
-	log := gologger.Get()
-	select {
-	case h.taskUpdateCh <- struct{}{}:
-		go h.notifyWebhooks()
-	case <-h.stopCh:
-		log.Debug().Msg("NotifyTaskUpdate: Ignoring update during shutdown")
-	default:
-	}
-}
-
-func (h *TaskHandler) notifyWebhooks() {
-	log := gologger.WithComponent("webhook")
-
-	select {
-	case <-h.stopCh:
-		log.Debug().Msg("notifyWebhooks: Ignoring webhook notification during shutdown")
-		return
-	default:
-	}
-
-	tasks, err := h.service.ListAvailableTasks(context.Background())
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to list tasks for webhook notification")
-		return
-	}
-
-	if len(tasks) == 0 {
-		log.Debug().Msg("No available tasks to notify about")
-		return
-	}
-
-	payload := WSMessage{
-		Type:    "available_tasks",
-		Payload: tasks,
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal webhook payload")
-		return
-	}
-
-	h.webhookMutex.RLock()
-	webhooks := make([]WebhookRegistration, 0, len(h.webhooks))
-	for _, webhook := range h.webhooks {
-		webhooks = append(webhooks, webhook)
-	}
-	h.webhookMutex.RUnlock()
-
-	if len(webhooks) == 0 {
-		log.Debug().Msg("No webhooks registered, skipping notifications")
-		return
-	}
-
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:       100,
-			IdleConnTimeout:    90 * time.Second,
-			DisableCompression: true,
-		},
-	}
-
-	sem := make(chan struct{}, 10)
-	var wg sync.WaitGroup
-
-	for _, webhook := range webhooks {
-		select {
-		case <-h.stopCh:
-			log.Debug().Msg("Cancelling webhook notifications due to shutdown")
-			return
-		default:
-			sem <- struct{}{}
-			wg.Add(1)
-
-			go func(webhook WebhookRegistration) {
-				defer func() {
-					<-sem
-					wg.Done()
-				}()
-
-				req, err := http.NewRequest("POST", webhook.URL, bytes.NewReader(payloadBytes))
-				if err != nil {
-					log.Error().Err(err).
-						Str("webhook_id", webhook.ID).
-						Str("url", webhook.URL).
-						Msg("Failed to create webhook request")
-					return
-				}
-
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Webhook-ID", webhook.ID)
-
-				resp, err := client.Do(req)
-				if err != nil {
-					log.Error().Err(err).
-						Str("webhook_id", webhook.ID).
-						Str("url", webhook.URL).
-						Msg("Failed to send webhook notification")
-					return
-				}
-				defer resp.Body.Close()
-
-				if resp.StatusCode != http.StatusOK {
-					body, _ := io.ReadAll(resp.Body)
-					log.Error().
-						Str("webhook_id", webhook.ID).
-						Str("url", webhook.URL).
-						Int("status", resp.StatusCode).
-						Str("response", string(body)).
-						Msg("Webhook notification failed")
-					return
-				}
-
-				log.Debug().
-					Str("webhook_id", webhook.ID).
-					Str("url", webhook.URL).
-					Int("task_count", len(tasks)).
-					Msg("Webhook notification sent successfully")
-			}(webhook)
-		}
-	}
-
-	wg.Wait()
+	h.webhookService.NotifyTaskUpdate()
 }
 
 func (h *TaskHandler) RegisterWebhook(w http.ResponseWriter, r *http.Request) {
-	var req RegisterWebhookRequest
+	var req services.RegisterWebhookRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if req.URL == "" {
-		http.Error(w, "Webhook URL is required", http.StatusBadRequest)
+	webhookID, err := h.webhookService.RegisterWebhook(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	if req.RunnerID == "" {
-		http.Error(w, "Runner ID is required", http.StatusBadRequest)
-		return
-	}
-
-	if req.DeviceID == "" {
-		http.Error(w, "Device ID is required", http.StatusBadRequest)
-		return
-	}
-
-	webhookID := uuid.New().String()
-	webhook := WebhookRegistration{
-		ID:        webhookID,
-		URL:       req.URL,
-		RunnerID:  req.RunnerID,
-		DeviceID:  req.DeviceID,
-		CreatedAt: time.Now(),
-	}
-
-	h.webhookMutex.Lock()
-	h.webhooks[webhookID] = webhook
-	h.webhookMutex.Unlock()
-
-	log := gologger.WithComponent("webhook")
-	log.Info().
-		Str("webhook_id", webhookID).
-		Str("url", req.URL).
-		Str("runner_id", req.RunnerID).
-		Str("device_id", req.DeviceID).
-		Time("created_at", webhook.CreatedAt).
-		Int("total_webhooks", len(h.webhooks)).
-		Msg("Webhook registered")
-
-	go func() {
-		tasks, err := h.service.ListAvailableTasks(context.Background())
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("webhook_id", webhookID).
-				Msg("Failed to list tasks for initial webhook notification")
-			return
-		}
-
-		payload := WSMessage{
-			Type:    "available_tasks",
-			Payload: tasks,
-		}
-
-		payloadBytes, err := json.Marshal(payload)
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("webhook_id", webhookID).
-				Msg("Failed to marshal initial webhook payload")
-			return
-		}
-
-		client := &http.Client{
-			Timeout: 5 * time.Second,
-		}
-
-		req, err := http.NewRequest("POST", webhook.URL, strings.NewReader(string(payloadBytes)))
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("webhook_id", webhookID).
-				Msg("Failed to create initial webhook request")
-			return
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Webhook-ID", webhookID)
-
-		startTime := time.Now()
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("webhook_id", webhookID).
-				Str("url", webhook.URL).
-				Dur("attempt_duration", time.Since(startTime)).
-				Msg("Failed to send initial webhook notification")
-			return
-		}
-		defer resp.Body.Close()
-
-		requestDuration := time.Since(startTime)
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			log.Warn().
-				Int("status", resp.StatusCode).
-				Str("webhook_id", webhookID).
-				Str("url", webhook.URL).
-				Dur("response_time_ms", requestDuration).
-				Int("payload_size_bytes", len(payloadBytes)).
-				Msg("Initial webhook notification returned non-success status")
-			return
-		}
-
-		log.Info().
-			Str("webhook_id", webhookID).
-			Str("url", webhook.URL).
-			Int("status", resp.StatusCode).
-			Dur("response_time_ms", requestDuration).
-			Int("payload_size_bytes", len(payloadBytes)).
-			Int("tasks_count", len(tasks)).
-			Msg("Initial webhook notification sent successfully")
-	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"id": webhookID,
 	}); err != nil {
+		log := gologger.Get()
 		log.Error().Err(err).Str("webhook_id", webhookID).Msg("Failed to encode webhook registration response")
 	}
 }
@@ -354,27 +120,14 @@ func (h *TaskHandler) UnregisterWebhook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	h.webhookMutex.Lock()
-	webhook, exists := h.webhooks[webhookID]
-	if !exists {
-		h.webhookMutex.Unlock()
-		http.Error(w, "Webhook not found", http.StatusNotFound)
+	if err := h.webhookService.UnregisterWebhook(webhookID); err != nil {
+		if err.Error() == "webhook not found" {
+			http.Error(w, "Webhook not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	delete(h.webhooks, webhookID)
-	h.webhookMutex.Unlock()
-
-	log := gologger.WithComponent("webhook")
-	log.Info().
-		Str("webhook_id", webhookID).
-		Str("url", webhook.URL).
-		Str("runner_id", webhook.RunnerID).
-		Str("device_id", webhook.DeviceID).
-		Time("created_at", webhook.CreatedAt).
-		Time("unregistered_at", time.Now()).
-		Int("remaining_webhooks", len(h.webhooks)).
-		Msg("Webhook unregistered")
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -762,23 +515,5 @@ func (h *TaskHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) CleanupResources() {
-	log := gologger.WithComponent("webhook")
-
-	h.webhookMutex.RLock()
-	webhookCount := len(h.webhooks)
-	h.webhookMutex.RUnlock()
-
-	log.Info().
-		Int("total_webhooks", webhookCount).
-		Msg("Starting webhook cleanup")
-
-	select {
-	case <-h.taskUpdateCh:
-	default:
-	}
-	close(h.taskUpdateCh)
-
-	log.Info().
-		Int("total_webhooks_cleaned", webhookCount).
-		Msg("Webhook cleanup completed")
+	h.webhookService.CleanupResources()
 }

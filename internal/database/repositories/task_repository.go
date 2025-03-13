@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/models"
 	"gorm.io/gorm"
 )
@@ -129,6 +130,7 @@ func (r *TaskRepository) ListByStatus(ctx context.Context, status models.TaskSta
 			CreatedAt:       dbTask.CreatedAt,
 			UpdatedAt:       dbTask.UpdatedAt,
 			CompletedAt:     dbTask.CompletedAt,
+			Nonce:           dbTask.Nonce,
 		}
 
 		if err := json.Unmarshal(dbTask.Config, &tasks[i].Config); err != nil {
@@ -218,6 +220,11 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 }
 
 func (r *TaskRepository) SaveTaskResult(ctx context.Context, result *models.TaskResult) error {
+	log := gologger.Get()
+	log.Info().
+		Str("output", string(result.Output)).
+		Msg("Saving task result")
+
 	dbResult := &models.TaskResult{
 		ID:              result.ID,
 		TaskID:          result.TaskID,

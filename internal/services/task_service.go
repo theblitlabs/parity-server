@@ -34,14 +34,16 @@ type RewardCalculatorService interface {
 
 type TaskService struct {
 	repo             TaskRepository
-	rewardCalculator RewardCalculatorService
+	rewardCalculator *RewardCalculator
 	rewardClient     RewardClient
+	nonceService     *NonceService
 }
 
-func NewTaskService(repo TaskRepository, rewardCalculator RewardCalculatorService) *TaskService {
+func NewTaskService(repo TaskRepository, rewardCalculator *RewardCalculator) *TaskService {
 	return &TaskService{
 		repo:             repo,
 		rewardCalculator: rewardCalculator,
+		nonceService:     NewNonceService(),
 	}
 }
 
@@ -233,54 +235,73 @@ func (s *TaskService) GetTaskResult(ctx context.Context, taskID string) (*models
 func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskResult) error {
 	log := gologger.WithComponent("task_service")
 
-	// Validate result first before any processing
-	if err := result.Validate(); err != nil {
-		log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Task result validation failed")
-		return fmt.Errorf("invalid task result: %w", err)
+	if result == nil {
+		return fmt.Errorf("invalid task result: result cannot be nil")
 	}
 
-	// Calculate reward and update task
-	resourceMetrics := ResourceMetrics{
-		CPUSeconds:      result.CPUSeconds,
-		EstimatedCycles: result.EstimatedCycles,
-		MemoryGBHours:   result.MemoryGBHours,
-		StorageGB:       result.StorageGB,
-		NetworkDataGB:   result.NetworkDataGB,
-	}
-	reward := s.rewardCalculator.CalculateReward(resourceMetrics)
-	result.Reward = reward
-
+	// Get the task to verify nonce
 	task, err := s.repo.Get(ctx, result.TaskID)
 	if err != nil {
-		log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to get task for reward update")
-		return fmt.Errorf("failed to get task for reward update: %w", err)
+		return fmt.Errorf("failed to get task: %w", err)
 	}
 
-	// Only update task status if the result indicates success
+	// Verify nonce in task output
+	if !s.nonceService.VerifyNonce(task.Nonce, result.Output) {
+		log.Error().
+			Str("task_id", result.TaskID.String()).
+			Str("nonce", task.Nonce).
+			Msg("Task result verification failed: nonce not found in output")
+
+		// Mark task as not verified
+		task.Status = models.TaskStatusNotVerified
+		if err := s.repo.Update(ctx, task); err != nil {
+			log.Error().Err(err).
+				Str("task_id", result.TaskID.String()).
+				Msg("Failed to update task status to not verified")
+		}
+		return fmt.Errorf("invalid task result: nonce verification failed")
+	}
+
+	log.Info().
+		Str("task_id", result.TaskID.String()).
+		Str("nonce", task.Nonce).
+		Msg("Task result verification passed")
+
+	// Calculate reward based on exit code
+	reward := 0.0
 	if result.ExitCode == 0 {
+		reward = s.rewardCalculator.CalculateReward(ResourceMetrics{
+			CPUSeconds:      result.CPUSeconds,
+			EstimatedCycles: result.EstimatedCycles,
+			MemoryGBHours:   result.MemoryGBHours,
+			StorageGB:       result.StorageGB,
+			NetworkDataGB:   result.NetworkDataGB,
+		})
 		task.Status = models.TaskStatusCompleted
 		now := time.Now()
 		task.CompletedAt = &now
 	} else {
 		task.Status = models.TaskStatusFailed
 	}
-	task.Reward = reward
 
+	// Update task status and reward
 	if err := s.repo.Update(ctx, task); err != nil {
-		log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to update task reward and status")
-		return fmt.Errorf("failed to update task reward and status: %w", err)
+		return fmt.Errorf("failed to update task status: %w", err)
 	}
 
 	// Save the task result
 	if err := s.repo.SaveTaskResult(ctx, result); err != nil {
-		log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to save task result")
 		return fmt.Errorf("failed to save task result: %w", err)
 	}
 
-	// Distribute rewards only for successful tasks
+	// Distribute reward if task was successful
 	if result.ExitCode == 0 && s.rewardClient != nil {
 		if err := s.rewardClient.DistributeRewards(result); err != nil {
-			log.Error().Err(err).Str("task_id", result.TaskID.String()).Msg("Failed to distribute rewards")
+			log.Error().Err(err).
+				Str("task_id", result.TaskID.String()).
+				Float64("reward", reward).
+				Msg("Failed to distribute reward")
+			return fmt.Errorf("failed to distribute reward: %w", err)
 		}
 	}
 

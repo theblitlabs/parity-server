@@ -69,9 +69,11 @@ func RunServer() {
 
 	rewardClient := services.NewEthereumRewardClient(cfg)
 
-	taskService := services.NewTaskService(taskRepo, rewardCalculator)
+	taskService := services.NewTaskService(taskRepo, rewardCalculator.(*services.RewardCalculator))
 	taskService.SetRewardClient(rewardClient)
-	taskHandler := handlers.NewTaskHandler(taskService)
+
+	webhookService := services.NewWebhookService(*taskService)
+	taskHandler := handlers.NewTaskHandler(taskService, webhookService)
 
 	internalStopCh := make(chan struct{})
 	go func() {
