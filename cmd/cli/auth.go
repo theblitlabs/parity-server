@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -11,6 +13,11 @@ import (
 	paritywallet "github.com/theblitlabs/go-parity-wallet"
 	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/config"
+)
+
+const (
+	KeystoreDirName  = ".parity"
+	KeystoreFileName = "keystore.json"
 )
 
 func RunAuth() {
@@ -59,7 +66,15 @@ func ExecuteAuth(privateKey string, configPath string) error {
 		return fmt.Errorf("invalid private key format: %w", err)
 	}
 
-	ks, err := keystore.NewKeystore(keystore.Config{})
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	ks, err := keystore.NewKeystore(keystore.Config{
+		DirPath:  filepath.Join(homeDir, KeystoreDirName),
+		FileName: KeystoreFileName,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create keystore: %w", err)
 	}
@@ -81,7 +96,7 @@ func ExecuteAuth(privateKey string, configPath string) error {
 
 	log.Info().
 		Str("address", client.Address().Hex()).
-		Str("keystore", fmt.Sprintf("%s/%s", keystore.DefaultDirName, keystore.DefaultFileName)).
+		Str("keystore", fmt.Sprintf("%s/%s", KeystoreDirName, KeystoreFileName)).
 		Msg("Wallet authenticated successfully")
 
 	return nil

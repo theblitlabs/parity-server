@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -79,7 +80,15 @@ func RunServer() {
 	}()
 	taskHandler.SetStopChannel(internalStopCh)
 
-	ks, err := keystore.NewKeystore(keystore.Config{})
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to get home directory")
+	}
+
+	ks, err := keystore.NewKeystore(keystore.Config{
+		DirPath:  filepath.Join(homeDir, KeystoreDirName),
+		FileName: KeystoreFileName,
+	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create keystore")
 	}
