@@ -13,10 +13,11 @@ type TaskStatus string
 type TaskType string
 
 const (
-	TaskStatusPending   TaskStatus = "pending"
-	TaskStatusRunning   TaskStatus = "running"
-	TaskStatusCompleted TaskStatus = "completed"
-	TaskStatusFailed    TaskStatus = "failed"
+	TaskStatusPending     TaskStatus = "pending"
+	TaskStatusRunning     TaskStatus = "running"
+	TaskStatusCompleted   TaskStatus = "completed"
+	TaskStatusFailed      TaskStatus = "failed"
+	TaskStatusNotVerified TaskStatus = "not_verified"
 )
 
 const (
@@ -61,24 +62,25 @@ type Task struct {
 	Status          TaskStatus         `json:"status" gorm:"type:varchar(50)"`
 	Config          json.RawMessage    `json:"config" gorm:"type:jsonb"`
 	Environment     *EnvironmentConfig `json:"environment" gorm:"type:jsonb"`
-	Reward          *float64           `json:"reward,omitempty" gorm:"type:decimal(20,8)"`
-	CreatorID       uuid.UUID          `json:"creator_id" gorm:"type:uuid;not null"`
 	CreatorAddress  string             `json:"creator_address" gorm:"type:varchar(42)"`
 	CreatorDeviceID string             `json:"creator_device_id" gorm:"type:varchar(255)"`
 	RunnerID        *uuid.UUID         `json:"runner_id" gorm:"type:uuid"`
+	Nonce           string             `json:"nonce" gorm:"type:varchar(64);not null"`
 	CreatedAt       time.Time          `json:"created_at" gorm:"type:timestamp"`
 	UpdatedAt       time.Time          `json:"updated_at" gorm:"type:timestamp"`
 	CompletedAt     *time.Time         `json:"completed_at" gorm:"type:timestamp"`
 }
 
-// NewTask creates a new Task with a generated UUID
+// NewTask creates a new Task with a generated UUID and nonce
 func NewTask() *Task {
-	return &Task{
+
+	t := &Task{
 		ID:        uuid.New(),
 		Status:    TaskStatusPending,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
+	return t
 }
 
 // Validate performs basic validation on the task

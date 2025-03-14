@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/models"
 	"gorm.io/gorm"
 )
@@ -31,7 +32,6 @@ func (r *TaskRepository) Create(ctx context.Context, task *models.Task) error {
 
 	dbTask := models.Task{
 		ID:              task.ID,
-		CreatorID:       task.CreatorID,
 		CreatorAddress:  task.CreatorAddress,
 		CreatorDeviceID: task.CreatorDeviceID,
 		Title:           task.Title,
@@ -39,8 +39,8 @@ func (r *TaskRepository) Create(ctx context.Context, task *models.Task) error {
 		Type:            task.Type,
 		Config:          task.Config,
 		Status:          task.Status,
-		Reward:          task.Reward,
 		Environment:     task.Environment,
+		Nonce:           task.Nonce,
 		CreatedAt:       task.CreatedAt,
 		UpdatedAt:       task.UpdatedAt,
 	}
@@ -61,15 +61,14 @@ func (r *TaskRepository) Get(ctx context.Context, id uuid.UUID) (*models.Task, e
 
 	task := &models.Task{
 		ID:              dbTask.ID,
-		CreatorID:       dbTask.CreatorID,
 		CreatorAddress:  dbTask.CreatorAddress,
 		CreatorDeviceID: dbTask.CreatorDeviceID,
 		Title:           dbTask.Title,
 		Description:     dbTask.Description,
 		Type:            dbTask.Type,
 		Status:          dbTask.Status,
-		Reward:          dbTask.Reward,
 		RunnerID:        dbTask.RunnerID,
+		Nonce:           dbTask.Nonce,
 		CreatedAt:       dbTask.CreatedAt,
 		UpdatedAt:       dbTask.UpdatedAt,
 		CompletedAt:     dbTask.CompletedAt,
@@ -118,18 +117,17 @@ func (r *TaskRepository) ListByStatus(ctx context.Context, status models.TaskSta
 	for i, dbTask := range dbTasks {
 		tasks[i] = &models.Task{
 			ID:              dbTask.ID,
-			CreatorID:       dbTask.CreatorID,
 			CreatorAddress:  dbTask.CreatorAddress,
 			CreatorDeviceID: dbTask.CreatorDeviceID,
 			Title:           dbTask.Title,
 			Description:     dbTask.Description,
 			Type:            dbTask.Type,
 			Status:          dbTask.Status,
-			Reward:          dbTask.Reward,
 			RunnerID:        dbTask.RunnerID,
 			CreatedAt:       dbTask.CreatedAt,
 			UpdatedAt:       dbTask.UpdatedAt,
 			CompletedAt:     dbTask.CompletedAt,
+			Nonce:           dbTask.Nonce,
 		}
 
 		if err := json.Unmarshal(dbTask.Config, &tasks[i].Config); err != nil {
@@ -155,15 +153,14 @@ func (r *TaskRepository) List(ctx context.Context, limit, offset int) ([]*models
 	for i, dbTask := range dbTasks {
 		tasks[i] = &models.Task{
 			ID:              dbTask.ID,
-			CreatorID:       dbTask.CreatorID,
 			CreatorAddress:  dbTask.CreatorAddress,
 			CreatorDeviceID: dbTask.CreatorDeviceID,
 			Title:           dbTask.Title,
 			Description:     dbTask.Description,
 			Type:            dbTask.Type,
 			Status:          dbTask.Status,
-			Reward:          dbTask.Reward,
 			RunnerID:        dbTask.RunnerID,
+			Nonce:           dbTask.Nonce,
 			CreatedAt:       dbTask.CreatedAt,
 			UpdatedAt:       dbTask.UpdatedAt,
 			CompletedAt:     dbTask.CompletedAt,
@@ -192,15 +189,14 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 	for i, dbTask := range dbTasks {
 		tasks[i] = models.Task{
 			ID:              dbTask.ID,
-			CreatorID:       dbTask.CreatorID,
 			CreatorAddress:  dbTask.CreatorAddress,
 			CreatorDeviceID: dbTask.CreatorDeviceID,
 			Title:           dbTask.Title,
 			Description:     dbTask.Description,
 			Type:            dbTask.Type,
 			Status:          dbTask.Status,
-			Reward:          dbTask.Reward,
 			RunnerID:        dbTask.RunnerID,
+			Nonce:           dbTask.Nonce,
 			CreatedAt:       dbTask.CreatedAt,
 			UpdatedAt:       dbTask.UpdatedAt,
 			CompletedAt:     dbTask.CompletedAt,
@@ -219,6 +215,11 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 }
 
 func (r *TaskRepository) SaveTaskResult(ctx context.Context, result *models.TaskResult) error {
+	log := gologger.Get()
+	log.Info().
+		Str("output", string(result.Output)).
+		Msg("Saving task result")
+
 	dbResult := &models.TaskResult{
 		ID:              result.ID,
 		TaskID:          result.TaskID,
@@ -239,17 +240,6 @@ func (r *TaskRepository) SaveTaskResult(ctx context.Context, result *models.Task
 		MemoryGBHours:   result.MemoryGBHours,
 		StorageGB:       result.StorageGB,
 		NetworkDataGB:   result.NetworkDataGB,
-	}
-
-	// Convert metadata to JSON
-	if result.Metadata != nil {
-		data, err := json.Marshal(result.Metadata)
-		if err != nil {
-			return fmt.Errorf("failed to marshal metadata: %w", err)
-		}
-		dbResult.Metadata = data
-	} else {
-		dbResult.Metadata = json.RawMessage("{}")
 	}
 
 	return r.db.WithContext(ctx).Create(dbResult).Error
@@ -285,7 +275,6 @@ func (r *TaskRepository) GetTaskResult(ctx context.Context, taskID uuid.UUID) (*
 		MemoryGBHours:   dbResult.MemoryGBHours,
 		StorageGB:       dbResult.StorageGB,
 		NetworkDataGB:   dbResult.NetworkDataGB,
-		Metadata:        dbResult.Metadata,
 	}
 
 	return taskResult, nil
