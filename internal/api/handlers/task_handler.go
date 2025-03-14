@@ -660,6 +660,11 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 	)
 	rewardAmount, _ := rewardWei.Int(nil)
 
+	log.Info().
+		Str("creator_device_id", task.CreatorDeviceID).
+		Str("reward", fmt.Sprintf("%v", task.Reward)).
+		Msg("Checking stake balance")
+
 	stakeInfo, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
 	if err != nil || !stakeInfo.Exists {
 		return fmt.Errorf("creator device not registered - please stake first")
