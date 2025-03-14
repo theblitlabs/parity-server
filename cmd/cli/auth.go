@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	paritywallet "github.com/theblitlabs/go-parity-wallet"
+	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/config"
 )
@@ -84,12 +84,12 @@ func ExecuteAuth(privateKey string, configPath string) error {
 	}
 
 	tokenAddress := common.HexToAddress(cfg.Ethereum.TokenAddress)
-	client, err := paritywallet.NewClientWithKey(
-		cfg.Ethereum.RPC,
-		cfg.Ethereum.ChainID,
-		privateKey,
-		tokenAddress,
-	)
+	client, err := walletsdk.NewClient(walletsdk.ClientConfig{
+		RPCURL:       cfg.Ethereum.RPC,
+		ChainID:      cfg.Ethereum.ChainID,
+		PrivateKey:   privateKey,
+		TokenAddress: tokenAddress,
+	})
 	if err != nil {
 		return fmt.Errorf("invalid private key: %w", err)
 	}

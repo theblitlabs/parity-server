@@ -14,8 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	paritywallet "github.com/theblitlabs/go-parity-wallet"
-	stakeclient "github.com/theblitlabs/go-stake-client"
+	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/api"
@@ -99,18 +98,18 @@ func RunServer() {
 	}
 
 	// Create wallet client
-	walletClient, err := paritywallet.NewClientWithKey(
-		cfg.Ethereum.RPC,
-		cfg.Ethereum.ChainID,
-		common.Bytes2Hex(crypto.FromECDSA(privateKey)),
-		common.HexToAddress(cfg.Ethereum.TokenAddress),
-	)
+	walletClient, err := walletsdk.NewClient(walletsdk.ClientConfig{
+		RPCURL:       cfg.Ethereum.RPC,
+		ChainID:      cfg.Ethereum.ChainID,
+		TokenAddress: common.HexToAddress(cfg.Ethereum.TokenAddress),
+		PrivateKey:   common.Bytes2Hex(crypto.FromECDSA(privateKey)),
+	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create wallet client")
 	}
 
 	// Create stake wallet instance
-	stakeWallet, err := stakeclient.NewStakeWallet(
+	stakeWallet, err := walletsdk.NewStakeWallet(
 		walletClient,
 		common.HexToAddress(cfg.Ethereum.StakeWalletAddress),
 		common.HexToAddress(cfg.Ethereum.TokenAddress),

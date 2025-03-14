@@ -8,9 +8,7 @@ replace github.com/theblitlabs/gologger => ./pkg/gologger
 
 replace github.com/theblitlabs/keystore => ./pkg/keystore
 
-replace github.com/theblitlabs/go-stake-client => ./pkg/go-stake-client
-
-replace github.com/theblitlabs/go-parity-wallet => ./pkg/go-parity-wallet
+replace github.com/theblitlabs/go-wallet-sdk => ./pkg/go-wallet-sdk
 
 require (
 	github.com/ethereum/go-ethereum v1.14.12
@@ -19,8 +17,7 @@ require (
 	github.com/rs/zerolog v1.32.0
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/viper v1.18.2
-	github.com/theblitlabs/go-parity-wallet v0.0.0-00010101000000-000000000000
-	github.com/theblitlabs/go-stake-client v0.0.0-00010101000000-000000000000
+	github.com/theblitlabs/go-wallet-sdk v0.0.0-00010101000000-000000000000
 	github.com/theblitlabs/gologger v0.0.0-00010101000000-000000000000
 	github.com/theblitlabs/keystore v0.0.0-00010101000000-000000000000
 	gorm.io/driver/postgres v1.5.11
@@ -42,7 +39,6 @@ require (
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/bits-and-blooms/bitset v1.13.0 // indirect
 	github.com/consensys/bavard v0.1.13 // indirect
 	github.com/consensys/gnark-crypto v0.12.1 // indirect
@@ -55,7 +51,6 @@ require (
 	github.com/ethereum/go-verkle v0.1.1-0.20240829091221-dffa7562dbe9 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/holiman/uint256 v1.3.1 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
@@ -71,7 +66,7 @@ require (
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
-	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
+	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
@@ -80,6 +75,7 @@ require (
 	github.com/supranational/blst v0.3.13 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
+	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/crypto v0.36.0 // indirect

@@ -9,8 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/rs/zerolog"
-	paritywallet "github.com/theblitlabs/go-parity-wallet"
-	stakeclient "github.com/theblitlabs/go-stake-client"
+	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/config"
@@ -22,7 +21,7 @@ type RewardClient interface {
 }
 
 type StakeWallet interface {
-	GetStakeInfo(deviceID string) (stakeclient.StakeInfo, error)
+	GetStakeInfo(deviceID string) (walletsdk.StakeInfo, error)
 	TransferPayment(creator string, runner string, amount *big.Int) error
 }
 
@@ -70,12 +69,12 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 		return fmt.Errorf("auth required: %w", err)
 	}
 
-	client, err := paritywallet.NewClientWithKey(
-		c.cfg.Ethereum.RPC,
-		int64(c.cfg.Ethereum.ChainID),
-		common.Bytes2Hex(crypto.FromECDSA(privateKey)),
-		common.HexToAddress(c.cfg.Ethereum.TokenAddress),
-	)
+	client, err := walletsdk.NewClient(walletsdk.ClientConfig{
+		RPCURL:       c.cfg.Ethereum.RPC,
+		ChainID:      int64(c.cfg.Ethereum.ChainID),
+		TokenAddress: common.HexToAddress(c.cfg.Ethereum.TokenAddress),
+		PrivateKey:   common.Bytes2Hex(crypto.FromECDSA(privateKey)),
+	})
 	if err != nil {
 		log.Error().Err(err).Msg("Client creation failed")
 		return fmt.Errorf("wallet client failed: %w", err)
@@ -88,7 +87,7 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 		Msg("Client initialized")
 
 	stakeWalletAddr := common.HexToAddress(c.cfg.Ethereum.StakeWalletAddress)
-	stakeWallet, err := stakeclient.NewStakeWallet(
+	stakeWallet, err := walletsdk.NewStakeWallet(
 		client,
 		stakeWalletAddr,
 		common.HexToAddress(c.cfg.Ethereum.TokenAddress),
