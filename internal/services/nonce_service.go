@@ -1,28 +1,59 @@
 package services
 
 import (
-	"crypto/rand"
+	"context"
 	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/drand/drand/client"
+	"github.com/drand/drand/client/http"
 	"github.com/google/uuid"
 	"github.com/theblitlabs/gologger"
 )
 
-type NonceService struct{}
+type NonceService struct {
+	client client.Client
+}
 
 func NewNonceService() *NonceService {
-	return &NonceService{}
+	urls := []string{"https://api.drand.sh", "https://drand.cloudflare.com"}
+	chainHash, _ := hex.DecodeString("8990e7a9aaed2ffed73dbd7092123d6f289930540d7651336225dc172e51b2ce")
+
+	httpClients := http.ForURLs(urls, chainHash)
+	if len(httpClients) == 0 {
+		// Fallback to a basic client if drand client creation fails
+		return &NonceService{}
+	}
+
+	c, err := client.New(
+		client.From(httpClients...),
+		client.WithChainHash(chainHash),
+		client.WithCacheSize(0), // Disable caching for nonces
+	)
+
+	if err != nil {
+		// Fallback to a basic client if drand client creation fails
+		return &NonceService{}
+	}
+
+	return &NonceService{
+		client: c,
+	}
 }
 
 func (s *NonceService) GenerateNonce() string {
-	nonceBytes := make([]byte, 32)
-	if _, err := rand.Read(nonceBytes); err != nil {
-		nonceBytes = []byte(fmt.Sprintf("%d-%s", time.Now().UnixNano(), uuid.New().String()))
+	if s.client != nil {
+		// Try to get randomness from drand
+		result, err := s.client.Get(context.Background(), 0)
+		if err == nil {
+			return hex.EncodeToString(result.Randomness())
+		}
 	}
-	return hex.EncodeToString(nonceBytes)
+
+	// Fallback to UUID-based nonce if drand fails
+	return hex.EncodeToString([]byte(fmt.Sprintf("%d-%s", time.Now().UnixNano(), uuid.New().String())))
 }
 
 func (s *NonceService) VerifyNonce(taskNonce string, taskOutput string) bool {
