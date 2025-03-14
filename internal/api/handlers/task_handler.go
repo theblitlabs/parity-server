@@ -64,18 +64,18 @@ type TaskService interface {
 }
 
 type TaskHandler struct {
-	service      TaskService
-	stakeWallet  *walletsdk.StakeWallet
-	taskUpdateCh chan struct{}
-	webhooks     map[string]WebhookRegistration
-	webhookMutex sync.RWMutex
-	stopCh       chan struct{}
+	service        TaskService
+	webhookService *services.WebhookService
+	stakeWallet    *walletsdk.StakeWallet
+	webhooks       map[string]WebhookRegistration
+	stopCh         chan struct{}
 }
 
 func NewTaskHandler(service TaskService, webhookService *services.WebhookService) *TaskHandler {
 	return &TaskHandler{
 		service:        service,
 		webhookService: webhookService,
+		webhooks:       make(map[string]WebhookRegistration),
 	}
 }
 
