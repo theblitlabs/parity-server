@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 
-	stakeclient "github.com/theblitlabs/go-stake-client"
+	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/models"
 	"github.com/theblitlabs/parity-server/internal/services"
@@ -64,10 +64,12 @@ type TaskService interface {
 }
 
 type TaskHandler struct {
-	service        TaskService
-	stakeWallet    *stakeclient.StakeWallet
-	webhookService *services.WebhookService
-	stopCh         chan struct{}
+	service      TaskService
+	stakeWallet  *walletsdk.StakeWallet
+	taskUpdateCh chan struct{}
+	webhooks     map[string]WebhookRegistration
+	webhookMutex sync.RWMutex
+	stopCh       chan struct{}
 }
 
 func NewTaskHandler(service TaskService, webhookService *services.WebhookService) *TaskHandler {
@@ -77,7 +79,7 @@ func NewTaskHandler(service TaskService, webhookService *services.WebhookService
 	}
 }
 
-func (h *TaskHandler) SetStakeWallet(wallet *stakeclient.StakeWallet) {
+func (h *TaskHandler) SetStakeWallet(wallet *walletsdk.StakeWallet) {
 	h.stakeWallet = wallet
 }
 
