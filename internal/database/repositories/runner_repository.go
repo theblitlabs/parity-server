@@ -21,7 +21,7 @@ func NewRunnerRepository(db *gorm.DB) *RunnerRepository {
 }
 
 func (r *RunnerRepository) Create(ctx context.Context, runner *models.Runner) error {
-	
+
 	dbRunner := models.Runner{
 		DeviceID: runner.DeviceID,
 		Address:  runner.Address,
