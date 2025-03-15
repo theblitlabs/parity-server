@@ -23,11 +23,11 @@ func NewRunnerRepository(db *gorm.DB) *RunnerRepository {
 func (r *RunnerRepository) Create(ctx context.Context, runner *models.Runner) error {
 
 	dbRunner := models.Runner{
-		DeviceID: runner.DeviceID,
-		Address:  runner.Address,
-		Status:   runner.Status,
-		TaskID:   runner.TaskID,
-		Webhook:  runner.Webhook,
+		DeviceID:      runner.DeviceID,
+		WalletAddress: runner.WalletAddress,
+		Status:        runner.Status,
+		TaskID:        runner.TaskID,
+		Webhook:       runner.Webhook,
 	}
 
 	result := r.db.WithContext(ctx).Create(&dbRunner)

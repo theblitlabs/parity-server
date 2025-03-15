@@ -22,8 +22,9 @@ type WebhookRegistration struct {
 }
 
 type RegisterWebhookRequest struct {
-	URL      string `json:"url"`
-	DeviceID string `json:"device_id"`
+	URL           string `json:"url"`
+	DeviceID      string `json:"device_id"`
+	WalletAddress string `json:"wallet_address"`
 }
 
 type WSMessage struct {

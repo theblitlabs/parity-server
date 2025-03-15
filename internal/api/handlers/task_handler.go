@@ -101,9 +101,10 @@ func (h *TaskHandler) RegisterWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	runner, err := h.runnerService.CreateOrUpdateRunner(r.Context(), &models.Runner{
-		DeviceID: req.DeviceID,
-		Status:   models.RunnerStatusOnline,
-		Webhook:  req.URL,
+		DeviceID:      req.DeviceID,
+		Status:        models.RunnerStatusOnline,
+		Webhook:       req.URL,
+		WalletAddress: req.WalletAddress,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
