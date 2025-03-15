@@ -31,7 +31,6 @@ type WebhookRegistration struct {
 
 type RegisterWebhookRequest struct {
 	URL      string `json:"url"`
-	RunnerID string `json:"runner_id"`
 	DeviceID string `json:"device_id"`
 }
 

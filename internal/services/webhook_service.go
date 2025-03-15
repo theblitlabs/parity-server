@@ -17,7 +17,6 @@ import (
 type WebhookRegistration struct {
 	ID        string    `json:"id"`
 	URL       string    `json:"url"`
-	RunnerID  string    `json:"runner_id"`
 	DeviceID  string    `json:"device_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -113,7 +112,6 @@ func (s *WebhookService) UnregisterWebhook(webhookID string) error {
 	log.Info().
 		Str("webhook_id", webhookID).
 		Str("url", webhook.URL).
-		Str("runner_id", webhook.RunnerID).
 		Str("device_id", webhook.DeviceID).
 		Time("created_at", webhook.CreatedAt).
 		Time("unregistered_at", time.Now()).
