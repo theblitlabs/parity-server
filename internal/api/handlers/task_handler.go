@@ -407,17 +407,14 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 		return fmt.Errorf("stake wallet not initialized")
 	}
 
-	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Create a channel to handle the async stake check
 	doneCh := make(chan struct {
 		info walletsdk.StakeInfo
 		err  error
 	})
 
-	// Run the stake check in a goroutine
 	go func() {
 		info, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
 		doneCh <- struct {
@@ -426,7 +423,6 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 		}{info, err}
 	}()
 
-	// Wait for either the stake check to complete or context to timeout
 	select {
 	case <-ctx.Done():
 		return fmt.Errorf("stake check timed out: %v", ctx.Err())
