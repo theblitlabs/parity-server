@@ -69,13 +69,15 @@ type TaskHandler struct {
 	stakeWallet    *walletsdk.StakeWallet
 	webhooks       map[string]WebhookRegistration
 	stopCh         chan struct{}
+	runnerService  *services.RunnerService
 }
 
-func NewTaskHandler(service TaskService, webhookService *services.WebhookService) *TaskHandler {
+func NewTaskHandler(service TaskService, webhookService *services.WebhookService, runnerService *services.RunnerService) *TaskHandler {
 	return &TaskHandler{
 		service:        service,
 		webhookService: webhookService,
 		webhooks:       make(map[string]WebhookRegistration),
+		runnerService:  runnerService,
 	}
 }
 
@@ -99,7 +101,11 @@ func (h *TaskHandler) RegisterWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	webhookID, err := h.webhookService.RegisterWebhook(req)
+	runner, err := h.runnerService.CreateOrUpdateRunner(r.Context(), &models.Runner{
+		DeviceID: req.DeviceID,
+		Status:   models.RunnerStatusOnline,
+		Webhook:  req.URL,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -108,10 +114,10 @@ func (h *TaskHandler) RegisterWebhook(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(map[string]string{
-		"id": webhookID,
+		"id": fmt.Sprintf("%d", runner.ID),
 	}); err != nil {
 		log := gologger.Get()
-		log.Error().Err(err).Str("webhook_id", webhookID).Msg("Failed to encode webhook registration response")
+		log.Error().Err(err).Str("webhook_id", fmt.Sprintf("%d", runner.ID)).Msg("Failed to encode webhook registration response")
 	}
 }
 

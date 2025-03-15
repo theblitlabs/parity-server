@@ -64,6 +64,8 @@ func RunServer() {
 	defer shutdownCancel()
 
 	taskRepo := repositories.NewTaskRepository(db)
+	runnerRepo := repositories.NewRunnerRepository(db)
+
 	rewardCalculator := services.NewRewardCalculator()
 
 	rewardClient := services.NewEthereumRewardClient(cfg)
@@ -71,8 +73,10 @@ func RunServer() {
 	taskService := services.NewTaskService(taskRepo, rewardCalculator.(*services.RewardCalculator))
 	taskService.SetRewardClient(rewardClient)
 
+	runnerService := services.NewRunnerService(runnerRepo)
+
 	webhookService := services.NewWebhookService(*taskService)
-	taskHandler := handlers.NewTaskHandler(taskService, webhookService)
+	taskHandler := handlers.NewTaskHandler(taskService, webhookService, runnerService)
 
 	internalStopCh := make(chan struct{})
 	go func() {

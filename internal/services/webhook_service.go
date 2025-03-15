@@ -24,7 +24,6 @@ type WebhookRegistration struct {
 
 type RegisterWebhookRequest struct {
 	URL      string `json:"url"`
-	RunnerID string `json:"runner_id"`
 	DeviceID string `json:"device_id"`
 }
 
@@ -68,9 +67,6 @@ func (s *WebhookService) RegisterWebhook(req RegisterWebhookRequest) (string, er
 	if req.URL == "" {
 		return "", fmt.Errorf("webhook URL is required")
 	}
-	if req.RunnerID == "" {
-		return "", fmt.Errorf("runner ID is required")
-	}
 	if req.DeviceID == "" {
 		return "", fmt.Errorf("device ID is required")
 	}
@@ -79,7 +75,6 @@ func (s *WebhookService) RegisterWebhook(req RegisterWebhookRequest) (string, er
 	webhook := WebhookRegistration{
 		ID:        webhookID,
 		URL:       req.URL,
-		RunnerID:  req.RunnerID,
 		DeviceID:  req.DeviceID,
 		CreatedAt: time.Now(),
 	}
@@ -92,7 +87,6 @@ func (s *WebhookService) RegisterWebhook(req RegisterWebhookRequest) (string, er
 	log.Info().
 		Str("webhook_id", webhookID).
 		Str("url", req.URL).
-		Str("runner_id", req.RunnerID).
 		Str("device_id", req.DeviceID).
 		Time("created_at", webhook.CreatedAt).
 		Int("total_webhooks", len(s.webhooks)).
