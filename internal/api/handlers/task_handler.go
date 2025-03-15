@@ -407,12 +407,24 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 		return fmt.Errorf("stake wallet not initialized")
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	stakeInfo, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
-	if err != nil || !stakeInfo.Exists {
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("stake check timed out: %v", ctx.Err())
+		default:
+			return fmt.Errorf("failed to get stake info: %v", err)
+		}
+	}
+
+	if !stakeInfo.Exists {
 		return fmt.Errorf("creator device not registered - please stake first")
 	}
 
-	if stakeInfo.Amount.Cmp(big.NewInt(0)) <= 0 {
+	if stakeInfo.Amount.Cmp(big.NewInt(0)) < 0 {
 		return fmt.Errorf("no stake found - please stake some PRTY first")
 	}
 
