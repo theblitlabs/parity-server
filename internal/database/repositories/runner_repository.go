@@ -37,6 +37,9 @@ func (r *RunnerRepository) Create(ctx context.Context, runner *models.Runner) er
 func (r *RunnerRepository) Get(ctx context.Context, deviceID string) (*models.Runner, error) {
 	var runner models.Runner
 	result := r.db.WithContext(ctx).First(&runner, "device_id = ?", deviceID)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, ErrRunnerNotFound
+	}
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -65,10 +68,12 @@ func (r *RunnerRepository) CreateOrUpdate(ctx context.Context, runner *models.Ru
 }
 
 func (r *RunnerRepository) Update(ctx context.Context, runner *models.Runner) (*models.Runner, error) {
-	var updatedRunner models.Runner
 	result := r.db.WithContext(ctx).Model(&models.Runner{}).Where("device_id = ?", runner.DeviceID).Updates(runner)
 	if result.Error != nil {
 		return nil, result.Error
 	}
-	return &updatedRunner, nil
+	if result.RowsAffected == 0 {
+		return nil, ErrRunnerNotFound
+	}
+	return r.Get(ctx, runner.DeviceID)
 }
