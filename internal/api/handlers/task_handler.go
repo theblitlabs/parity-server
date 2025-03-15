@@ -122,17 +122,19 @@ func (h *TaskHandler) RegisterWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) UnregisterWebhook(w http.ResponseWriter, r *http.Request) {
-	webhookID := mux.Vars(r)["id"]
-	if webhookID == "" {
-		http.Error(w, "Webhook ID is required", http.StatusBadRequest)
+	deviceID := mux.Vars(r)["device_id"]
+	if deviceID == "" {
+		http.Error(w, "Device ID is required", http.StatusBadRequest)
 		return
 	}
 
-	if err := h.webhookService.UnregisterWebhook(webhookID); err != nil {
-		if err.Error() == "webhook not found" {
-			http.Error(w, "Webhook not found", http.StatusNotFound)
-			return
-		}
+	_, err := h.runnerService.UpdateRunner(r.Context(), &models.Runner{
+		DeviceID: deviceID,
+		Webhook:  "",
+		Status:   models.RunnerStatusOffline,
+	})
+
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

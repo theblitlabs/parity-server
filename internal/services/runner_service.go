@@ -15,6 +15,7 @@ type RunnerRepository interface {
 	Create(ctx context.Context, runner *models.Runner) error
 	Get(ctx context.Context, deviceID string) (*models.Runner, error)
 	CreateOrUpdate(ctx context.Context, runner *models.Runner) (*models.Runner, error)
+	Update(ctx context.Context, runner *models.Runner) (*models.Runner, error)
 }
 
 type RunnerService struct {
@@ -35,4 +36,8 @@ func (s *RunnerService) GetRunner(ctx context.Context, deviceID string) (*models
 
 func (s *RunnerService) CreateOrUpdateRunner(ctx context.Context, runner *models.Runner) (*models.Runner, error) {
 	return s.repo.CreateOrUpdate(ctx, runner)
+}
+
+func (s *RunnerService) UpdateRunner(ctx context.Context, runner *models.Runner) (*models.Runner, error) {
+	return s.repo.Update(ctx, runner)
 }

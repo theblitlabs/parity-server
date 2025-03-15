@@ -63,3 +63,12 @@ func (r *RunnerRepository) CreateOrUpdate(ctx context.Context, runner *models.Ru
 	err := r.db.WithContext(ctx).Save(&existingRunner).Error
 	return &existingRunner, err
 }
+
+func (r *RunnerRepository) Update(ctx context.Context, runner *models.Runner) (*models.Runner, error) {
+	var updatedRunner models.Runner
+	result := r.db.WithContext(ctx).Model(&models.Runner{}).Where("device_id = ?", runner.DeviceID).Updates(runner)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &updatedRunner, nil
+}
