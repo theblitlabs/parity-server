@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"strings"
@@ -44,6 +45,8 @@ type CreateTaskRequest struct {
 	Title       string                    `json:"title"`
 	Description string                    `json:"description"`
 	Type        models.TaskType           `json:"type"`
+	Image       string                    `json:"image"`
+	Command     []string                  `json:"command"`
 	Config      json.RawMessage           `json:"config"`
 	Environment *models.EnvironmentConfig `json:"environment,omitempty"`
 	Reward      float64                   `json:"reward"`
@@ -66,15 +69,17 @@ type TaskService interface {
 type TaskHandler struct {
 	service        TaskService
 	webhookService *services.WebhookService
+	s3Service      *services.S3Service
 	stakeWallet    *walletsdk.StakeWallet
 	webhooks       map[string]WebhookRegistration
 	stopCh         chan struct{}
 }
 
-func NewTaskHandler(service TaskService, webhookService *services.WebhookService) *TaskHandler {
+func NewTaskHandler(service TaskService, webhookService *services.WebhookService, s3Service *services.S3Service) *TaskHandler {
 	return &TaskHandler{
 		service:        service,
 		webhookService: webhookService,
+		s3Service:      s3Service,
 		webhooks:       make(map[string]WebhookRegistration),
 	}
 }
@@ -169,14 +174,129 @@ func generateNonce() string {
 }
 
 func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
-	var req CreateTaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
 	log := gologger.Get()
+	log.Info().Msg("Creating task")
+
+	// Check content type for multipart form data
+	contentType := r.Header.Get("Content-Type")
+	var req CreateTaskRequest
+	var dockerImage []byte
+
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		// Parse multipart form data
+		if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max
+			log.Error().Err(err).Msg("Failed to parse multipart form")
+			http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
+			return
+		}
+
+		// Get task data from form
+		taskData := r.FormValue("task")
+		if taskData == "" {
+			http.Error(w, "Task data is required", http.StatusBadRequest)
+			return
+		}
+
+		log.Debug().Str("task_data", taskData).Msg("Received task data")
+
+		if err := json.Unmarshal([]byte(taskData), &req); err != nil {
+			log.Error().Err(err).Str("task_data", taskData).Msg("Failed to unmarshal task data")
+			http.Error(w, "Invalid task data", http.StatusBadRequest)
+			return
+		}
+
+		// Always set type to Docker for multipart requests
+		req.Type = models.TaskTypeDocker
+
+		// Get Docker image file if present
+		file, header, err := r.FormFile("image")
+		if err == nil {
+			defer file.Close()
+			log.Info().
+				Str("filename", header.Filename).
+				Int64("size", header.Size).
+				Msg("Processing Docker image file")
+
+			dockerImage, err = io.ReadAll(file)
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to read Docker image file")
+				http.Error(w, "Failed to read Docker image file", http.StatusInternalServerError)
+				return
+			}
+
+			// Upload Docker image to S3
+			imageURL, err := h.s3Service.UploadDockerImage(r.Context(), dockerImage, strings.TrimSuffix(header.Filename, ".tar"))
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to upload Docker image to S3")
+				http.Error(w, "Failed to upload Docker image to S3", http.StatusInternalServerError)
+				return
+			}
+
+			// Create Docker environment config if not present
+			if req.Environment == nil {
+				req.Environment = &models.EnvironmentConfig{
+					Type: "docker",
+					Config: map[string]interface{}{
+						"image":   req.Image,
+						"command": req.Command,
+					},
+				}
+			}
+
+			// Create task config
+			taskConfig := models.TaskConfig{
+				Command:        req.Command,
+				DockerImageURL: imageURL,
+				ImageName:      strings.TrimSuffix(header.Filename, ".tar"),
+			}
+
+			// Marshal config
+			var configErr error
+			req.Config, configErr = json.Marshal(taskConfig)
+			if configErr != nil {
+				log.Error().Err(configErr).Msg("Failed to marshal task config")
+				http.Error(w, "Failed to process task configuration", http.StatusInternalServerError)
+				return
+			}
+		}
+	} else {
+		// Handle regular JSON request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Error().Err(err).Msg("Failed to decode request body")
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		// For JSON requests with Docker image
+		if req.Image != "" {
+			req.Type = models.TaskTypeDocker
+			if req.Environment == nil {
+				req.Environment = &models.EnvironmentConfig{
+					Type: "docker",
+					Config: map[string]interface{}{
+						"image":   req.Image,
+						"command": req.Command,
+					},
+				}
+			}
+
+			taskConfig := models.TaskConfig{
+				Command:   req.Command,
+				ImageName: req.Image,
+			}
+
+			var configErr error
+			req.Config, configErr = json.Marshal(taskConfig)
+			if configErr != nil {
+				log.Error().Err(configErr).Msg("Failed to marshal task config")
+				http.Error(w, "Failed to process task configuration", http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
 	log.Info().
-		Str("request", fmt.Sprintf("%+v", req)).
+		Interface("request", req).
 		Msg("Creating task")
 
 	if req.Title == "" || req.Description == "" {
@@ -197,17 +317,32 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Type != models.TaskTypeDocker && req.Type != models.TaskTypeCommand {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		log.Error().Str("type", string(req.Type)).Msg("Invalid task type")
+		http.Error(w, "Invalid task type", http.StatusBadRequest)
 		return
 	}
 
 	if req.Type == models.TaskTypeDocker {
-		if len(req.Config) == 0 {
-			http.Error(w, "Command is required for Docker tasks", http.StatusBadRequest)
-			return
-		}
 		if req.Environment == nil || req.Environment.Type != "docker" {
 			http.Error(w, "Docker environment configuration is required", http.StatusBadRequest)
+			return
+		}
+
+		// Validate Docker configuration
+		var taskConfig models.TaskConfig
+		if err := json.Unmarshal(req.Config, &taskConfig); err != nil {
+			log.Error().Err(err).Msg("Failed to unmarshal task config")
+			http.Error(w, "Invalid task configuration", http.StatusBadRequest)
+			return
+		}
+
+		if taskConfig.ImageName == "" {
+			http.Error(w, "Image name is required for Docker tasks", http.StatusBadRequest)
+			return
+		}
+
+		if len(taskConfig.Command) == 0 {
+			http.Error(w, "Command is required for Docker tasks", http.StatusBadRequest)
 			return
 		}
 	}
@@ -407,16 +542,40 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 		return fmt.Errorf("stake wallet not initialized")
 	}
 
-	stakeInfo, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
-	if err != nil || !stakeInfo.Exists {
-		return fmt.Errorf("creator device not registered - please stake first")
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-	if stakeInfo.Amount.Cmp(big.NewInt(0)) <= 0 {
-		return fmt.Errorf("no stake found - please stake some PRTY first")
-	}
+	doneCh := make(chan struct {
+		info walletsdk.StakeInfo
+		err  error
+	})
 
-	return nil
+	go func() {
+		info, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
+		doneCh <- struct {
+			info walletsdk.StakeInfo
+			err  error
+		}{info, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("stake check timed out: %v", ctx.Err())
+	case result := <-doneCh:
+		if result.err != nil {
+			return fmt.Errorf("failed to get stake info: %v", result.err)
+		}
+
+		if !result.info.Exists {
+			return fmt.Errorf("creator device not registered - please stake first")
+		}
+
+		if result.info.Amount.Cmp(big.NewInt(0)) < 0 {
+			return fmt.Errorf("no stake found - please stake some PRTY first")
+		}
+
+		return nil
+	}
 }
 
 func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
