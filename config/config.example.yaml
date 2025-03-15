@@ -11,3 +11,7 @@ ethereum:
   chain_id:
   token_address:
   stake_wallet_address:
+
+aws:
+  region: us-west-2
+  bucket_name: dev-parity-docker-images

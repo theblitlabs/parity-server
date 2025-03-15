@@ -8,6 +8,7 @@ type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
 	Ethereum EthereumConfig `mapstructure:"ethereum"`
+	AWS      AWSConfig      `mapstructure:"aws"`
 }
 
 type ServerConfig struct {
@@ -18,6 +19,11 @@ type ServerConfig struct {
 
 type DatabaseConfig struct {
 	URL string `mapstructure:"url"`
+}
+
+type AWSConfig struct {
+	Region     string `mapstructure:"region"`
+	BucketName string `mapstructure:"bucket_name"`
 }
 
 type EthereumConfig struct {
