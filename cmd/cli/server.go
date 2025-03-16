@@ -77,7 +77,7 @@ func RunServer() {
 
 	scheduler := gocron.NewScheduler(time.UTC)
 
-	scheduler.Every(10).Seconds().Do(func() {
+	scheduler.Every(15).Minutes().Do(func() {
 		taskService.CheckForTasks()
 	})
 
