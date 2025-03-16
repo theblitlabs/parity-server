@@ -306,3 +306,22 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 
 	return nil
 }
+
+func (s *TaskService) CheckForTasks() {
+	log := gologger.WithComponent("task_service")
+
+	log.Info().Msg("Checking for tasks")
+
+	tasks, err := s.repo.ListByStatus(context.Background(), models.TaskStatusPending)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list tasks")
+		return
+	}
+
+	for _, task := range tasks {
+		log.Info().Str("task_id", task.ID.String()).Msg("Checking task")
+
+	}
+}
+
+

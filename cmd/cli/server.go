@@ -23,6 +23,8 @@ import (
 	"github.com/theblitlabs/parity-server/internal/database"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
 	"github.com/theblitlabs/parity-server/internal/services"
+
+	"github.com/go-co-op/gocron"
 )
 
 func verifyPortAvailable(host string, port string) error {
@@ -72,6 +74,14 @@ func RunServer() {
 
 	taskService := services.NewTaskService(taskRepo, rewardCalculator.(*services.RewardCalculator))
 	taskService.SetRewardClient(rewardClient)
+
+	scheduler := gocron.NewScheduler(time.UTC)
+
+	scheduler.Every(10).Seconds().Do(func() {
+		taskService.CheckForTasks()
+	})
+
+	scheduler.StartAsync()
 
 	runnerService := services.NewRunnerService(runnerRepo)
 
