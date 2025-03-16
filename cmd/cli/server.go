@@ -78,7 +78,7 @@ func RunServer() {
 
 	scheduler := gocron.NewScheduler(time.UTC)
 
-	if _, err := scheduler.Every(15).Minutes().Do(func() {
+	if _, err := scheduler.Every(cfg.Scheduler.Interval).Minutes().Do(func() {
 		taskService.MonitorTasks()
 	}); err != nil {
 		log.Error().Err(err).Msg("Failed to schedule task monitoring")
@@ -177,14 +177,14 @@ func RunServer() {
 		}
 	}()
 
+	<-shutdownCtx.Done()
+
 	go func() {
 		<-ctx.Done()
 		log.Info().Msg("Stopping scheduler...")
 		scheduler.Stop()
 		shutdownCancel()
 	}()
-
-	<-shutdownCtx.Done()
 
 	serverShutdownCtx, serverShutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer serverShutdownCancel()
