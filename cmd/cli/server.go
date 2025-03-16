@@ -72,7 +72,8 @@ func RunServer() {
 
 	rewardClient := services.NewEthereumRewardClient(cfg)
 
-	taskService := services.NewTaskService(taskRepo, rewardCalculator.(*services.RewardCalculator), runnerRepo)
+	runnerService := services.NewRunnerService(runnerRepo)
+	taskService := services.NewTaskService(taskRepo, rewardCalculator.(*services.RewardCalculator), runnerService)
 	taskService.SetRewardClient(rewardClient)
 
 	scheduler := gocron.NewScheduler(time.UTC)
@@ -82,8 +83,6 @@ func RunServer() {
 	})
 
 	scheduler.StartAsync()
-
-	runnerService := services.NewRunnerService(runnerRepo)
 
 	webhookService := services.NewWebhookService(*taskService)
 	s3Service, err := services.NewS3Service(cfg.AWS.BucketName)

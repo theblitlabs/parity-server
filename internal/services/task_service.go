@@ -37,15 +37,15 @@ type TaskService struct {
 	rewardCalculator *RewardCalculator
 	rewardClient     RewardClient
 	nonceService     *NonceService
-	runnerRepo       RunnerRepository
+	runnerService    *RunnerService
 }
 
-func NewTaskService(repo TaskRepository, rewardCalculator *RewardCalculator, runnerRepo RunnerRepository) *TaskService {
+func NewTaskService(repo TaskRepository, rewardCalculator *RewardCalculator, runnerService *RunnerService) *TaskService {
 	return &TaskService{
 		repo:             repo,
 		rewardCalculator: rewardCalculator,
 		nonceService:     NewNonceService(),
-		runnerRepo:       runnerRepo,
+		runnerService:    runnerService,
 	}
 }
 
@@ -110,7 +110,7 @@ func (s *TaskService) ListAvailableTasks(ctx context.Context) ([]*models.Task, e
 
 	availableTasks := make([]*models.Task, 0)
 	for _, task := range tasks {
-		if task.Status == models.TaskStatusPending && task.RunnerID == nil {
+		if task.Status == models.TaskStatusPending {
 			availableTasks = append(availableTasks, task)
 		}
 	}
@@ -118,7 +118,7 @@ func (s *TaskService) ListAvailableTasks(ctx context.Context) ([]*models.Task, e
 	return availableTasks, nil
 }
 
-func (s *TaskService) AssignTaskToRunner(ctx context.Context, taskID string, runnerID string) error {
+func (s *TaskService) AssignTaskToRunner(ctx context.Context, taskID string, deviceID string) error {
 	log := gologger.WithComponent("task_service")
 
 	taskUUID, err := uuid.Parse(taskID)
@@ -131,7 +131,7 @@ func (s *TaskService) AssignTaskToRunner(ctx context.Context, taskID string, run
 		return err
 	}
 
-	runnerUUID, err := uuid.Parse(runnerID)
+	runner, err := s.runnerService.GetRunner(ctx, deviceID)
 	if err != nil {
 		return fmt.Errorf("invalid runner ID: %w", err)
 	}
@@ -145,11 +145,19 @@ func (s *TaskService) AssignTaskToRunner(ctx context.Context, taskID string, run
 	}
 
 	task.Status = models.TaskStatusRunning
-	task.RunnerID = &runnerUUID
 	task.UpdatedAt = time.Now()
 
 	if err := s.repo.Update(ctx, task); err != nil {
 		log.Error().Err(err).Str("task", taskID).Msg("Failed to assign task")
+		return err
+	}
+
+	runner.Status = models.RunnerStatusBusy
+	runner.TaskID = &task.ID
+	runner.Task = task
+
+	if _, err := s.runnerService.UpdateRunner(ctx, runner); err != nil {
+		log.Error().Err(err).Str("runner", deviceID).Msg("Failed to update runner")
 		return err
 	}
 
@@ -320,7 +328,7 @@ func (s *TaskService) MonitorTasks() {
 		return
 	}
 
-	runners, err := s.runnerRepo.ListByStatus(context.Background(), models.RunnerStatusOnline)
+	runners, err := s.runnerService.ListRunnersByStatus(context.Background(), models.RunnerStatusOnline)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to list runners")
 		return
