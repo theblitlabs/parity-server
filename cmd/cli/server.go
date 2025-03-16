@@ -85,6 +85,7 @@ func RunServer() {
 	}
 
 	scheduler.StartAsync()
+	defer scheduler.Stop()
 
 	webhookService := services.NewWebhookService(*taskService)
 	s3Service, err := services.NewS3Service(cfg.AWS.BucketName)
@@ -174,6 +175,13 @@ func RunServer() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("Server failed to start")
 		}
+	}()
+
+	go func() {
+		<-ctx.Done()
+		log.Info().Msg("Stopping scheduler...")
+		scheduler.Stop()
+		shutdownCancel()
 	}()
 
 	<-shutdownCtx.Done()
