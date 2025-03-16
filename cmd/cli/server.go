@@ -76,7 +76,12 @@ func RunServer() {
 	runnerService := services.NewRunnerService(runnerRepo)
 
 	webhookService := services.NewWebhookService(*taskService)
-	taskHandler := handlers.NewTaskHandler(taskService, webhookService, runnerService)
+	s3Service, err := services.NewS3Service(cfg.AWS.BucketName)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to initialize S3 service")
+		return
+	}
+	taskHandler := handlers.NewTaskHandler(taskService, webhookService, runnerService, s3Service)
 
 	internalStopCh := make(chan struct{})
 	go func() {
