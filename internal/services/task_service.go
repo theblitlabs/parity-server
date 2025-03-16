@@ -310,7 +310,7 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 }
 
 func (s *TaskService) MonitorTasks() {
-	log := gologger.WithComponent("task_service")
+	log := gologger.WithComponent("task_monitor")
 
 	log.Info().Msg("Checking for tasks")
 
@@ -320,21 +320,61 @@ func (s *TaskService) MonitorTasks() {
 		return
 	}
 
-	for _, task := range tasks {
-		log.Info().Str("task_id", task.ID.String()).Msg("Checking task")
-	}
-
 	runners, err := s.runnerRepo.ListByStatus(context.Background(), models.RunnerStatusOnline)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to list runners")
 		return
 	}
 
-	for _, runner := range runners {
-		log.Info().Str("runner_id", runner.DeviceID).Msg("Checking runner")
+	if len(runners) == 0 {
+		log.Error().Msg("No runners available")
+		return
+	} else if len(tasks) == 0 {
+		log.Error().Msg("No tasks available")
+		return
+	} else if len(runners) > 0 && len(tasks) > 0 {
+		err := s.assignTasksToRunner(tasks, runners)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to assign tasks to runners")
+			return
+		}
 	}
-	
-	
+
 }
 
+func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*models.Runner) error {
+	log := gologger.WithComponent("task_assign")
 
+	var batchSize = 1
+	var availableRunners = len(runners)
+	var runner_iterator = 0
+
+	for i := 0; i < len(tasks); i += 1 {
+		if availableRunners-batchSize < 0 {
+			log.Error().
+				Int("available_runners", availableRunners).
+				Int("batch_size", batchSize).
+				Msg("Not enough free runners for task")
+			return fmt.Errorf("not enough free runners for task")
+		}
+
+		availableRunners -= batchSize
+		var assignedRunners = 0
+
+		for runner_iterator < len(runners) && assignedRunners < batchSize {
+			runner := runners[runner_iterator]
+			err := s.AssignTaskToRunner(context.Background(), tasks[i].ID.String(), runner.DeviceID)
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to assign task to runner")
+				return err
+			}
+			runner_iterator += 1
+			log.Info().
+				Str("runner_id", runner.DeviceID).
+				Msg("Assigning task to runner")
+			assignedRunners += 1
+		}
+	}
+
+	return nil
+}

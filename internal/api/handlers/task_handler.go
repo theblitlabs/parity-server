@@ -75,7 +75,7 @@ type TaskHandler struct {
 	runnerService  *services.RunnerService
 }
 
-func NewTaskHandler(service TaskService, webhookService *services.WebhookService, runnerService *services.RunnerService,s3Service *services.S3Service) *TaskHandler {
+func NewTaskHandler(service TaskService, webhookService *services.WebhookService, runnerService *services.RunnerService, s3Service *services.S3Service) *TaskHandler {
 	return &TaskHandler{
 		service:        service,
 		webhookService: webhookService,
