@@ -37,13 +37,15 @@ type TaskService struct {
 	rewardCalculator *RewardCalculator
 	rewardClient     RewardClient
 	nonceService     *NonceService
+	runnerRepo       RunnerRepository
 }
 
-func NewTaskService(repo TaskRepository, rewardCalculator *RewardCalculator) *TaskService {
+func NewTaskService(repo TaskRepository, rewardCalculator *RewardCalculator, runnerRepo RunnerRepository) *TaskService {
 	return &TaskService{
 		repo:             repo,
 		rewardCalculator: rewardCalculator,
 		nonceService:     NewNonceService(),
+		runnerRepo:       runnerRepo,
 	}
 }
 
@@ -307,7 +309,7 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 	return nil
 }
 
-func (s *TaskService) CheckForTasks() {
+func (s *TaskService) MonitorTasks() {
 	log := gologger.WithComponent("task_service")
 
 	log.Info().Msg("Checking for tasks")
@@ -320,8 +322,19 @@ func (s *TaskService) CheckForTasks() {
 
 	for _, task := range tasks {
 		log.Info().Str("task_id", task.ID.String()).Msg("Checking task")
-
 	}
+
+	runners, err := s.runnerRepo.ListByStatus(context.Background(), models.RunnerStatusOnline)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list runners")
+		return
+	}
+
+	for _, runner := range runners {
+		log.Info().Str("runner_id", runner.DeviceID).Msg("Checking runner")
+	}
+	
+	
 }
 
 

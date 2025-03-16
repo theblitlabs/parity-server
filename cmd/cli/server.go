@@ -72,13 +72,13 @@ func RunServer() {
 
 	rewardClient := services.NewEthereumRewardClient(cfg)
 
-	taskService := services.NewTaskService(taskRepo, rewardCalculator.(*services.RewardCalculator))
+	taskService := services.NewTaskService(taskRepo, rewardCalculator.(*services.RewardCalculator), runnerRepo)
 	taskService.SetRewardClient(rewardClient)
 
 	scheduler := gocron.NewScheduler(time.UTC)
 
 	scheduler.Every(15).Minutes().Do(func() {
-		taskService.CheckForTasks()
+		taskService.MonitorTasks()
 	})
 
 	scheduler.StartAsync()

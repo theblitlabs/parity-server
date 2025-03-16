@@ -16,6 +16,7 @@ type RunnerRepository interface {
 	Get(ctx context.Context, deviceID string) (*models.Runner, error)
 	CreateOrUpdate(ctx context.Context, runner *models.Runner) (*models.Runner, error)
 	Update(ctx context.Context, runner *models.Runner) (*models.Runner, error)
+	ListByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error)
 }
 
 type RunnerService struct {
@@ -40,4 +41,8 @@ func (s *RunnerService) CreateOrUpdateRunner(ctx context.Context, runner *models
 
 func (s *RunnerService) UpdateRunner(ctx context.Context, runner *models.Runner) (*models.Runner, error) {
 	return s.repo.Update(ctx, runner)
+}
+
+func (s *RunnerService) ListRunnersByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error) {
+	return s.repo.ListByStatus(ctx, status)
 }

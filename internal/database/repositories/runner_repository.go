@@ -77,3 +77,13 @@ func (r *RunnerRepository) Update(ctx context.Context, runner *models.Runner) (*
 	}
 	return r.Get(ctx, runner.DeviceID)
 }
+
+
+func (r *RunnerRepository) ListByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error) {
+	var runners []*models.Runner
+	result := r.db.WithContext(ctx).Where("status = ?", status).Find(&runners)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return runners, nil
+}
