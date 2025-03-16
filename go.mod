@@ -16,6 +16,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.78.2
 	github.com/drand/drand v1.5.11
 	github.com/ethereum/go-ethereum v1.14.12
+	github.com/go-co-op/gocron v1.37.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/rs/zerolog v1.32.0
@@ -74,7 +75,6 @@ require (
 	github.com/ethereum/c-kzg-4844 v1.0.0 // indirect
 	github.com/ethereum/go-verkle v0.1.1-0.20240829091221-dffa7562dbe9 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/go-co-op/gocron v1.37.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect

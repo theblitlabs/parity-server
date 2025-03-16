@@ -78,9 +78,11 @@ func RunServer() {
 
 	scheduler := gocron.NewScheduler(time.UTC)
 
-	scheduler.Every(15).Minutes().Do(func() {
+	if _, err := scheduler.Every(15).Minutes().Do(func() {
 		taskService.MonitorTasks()
-	})
+	}); err != nil {
+		log.Error().Err(err).Msg("Failed to schedule task monitoring")
+	}
 
 	scheduler.StartAsync()
 
