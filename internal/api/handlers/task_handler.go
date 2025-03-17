@@ -613,40 +613,20 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 		return fmt.Errorf("stake wallet not initialized")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	doneCh := make(chan struct {
-		info walletsdk.StakeInfo
-		err  error
-	})
-
-	go func() {
-		info, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
-		doneCh <- struct {
-			info walletsdk.StakeInfo
-			err  error
-		}{info, err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return fmt.Errorf("stake check timed out: %v", ctx.Err())
-	case result := <-doneCh:
-		if result.err != nil {
-			return fmt.Errorf("failed to get stake info: %v", result.err)
-		}
-
-		if !result.info.Exists {
-			return fmt.Errorf("creator device not registered - please stake first")
-		}
-
-		if result.info.Amount.Cmp(big.NewInt(0)) < 0 {
-			return fmt.Errorf("no stake found - please stake some PRTY first")
-		}
-
-		return nil
+	info, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
+	if err != nil {
+		return fmt.Errorf("failed to get stake info: %v", err)
 	}
+
+	if !info.Exists {
+		return fmt.Errorf("creator device not registered - please stake first")
+	}
+
+	if info.Amount.Cmp(big.NewInt(0)) < 0 {
+		return fmt.Errorf("no stake found - please stake some PRTY first")
+	}
+
+	return nil
 }
 
 func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
@@ -728,7 +708,11 @@ func (h *TaskHandler) ListAvailableTasks(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *TaskHandler) NotifyRunnerOfTasks(runnerID string, tasks []*models.Task) error {
-	runner, err := h.runnerService.GetRunner(context.Background(), runnerID)
+	log := gologger.WithComponent("task_handler")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	runner, err := h.runnerService.GetRunner(ctx, runnerID)
 	if err != nil {
 		return fmt.Errorf("failed to get runner: %w", err)
 	}
@@ -758,26 +742,36 @@ func (h *TaskHandler) NotifyRunnerOfTasks(runnerID string, tasks []*models.Task)
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	// Send webhook
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Post(runner.Webhook, "application/json", bytes.NewBuffer(messageJSON))
+	req, err := http.NewRequestWithContext(ctx, "POST", runner.Webhook, bytes.NewBuffer(messageJSON))
 	if err != nil {
-		return fmt.Errorf("failed to send webhook: %w", err)
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Warn().Err(err).
+			Str("runner_id", runnerID).
+			Msg("Failed to notify runner, will be handled on next heartbeat")
+		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("webhook failed with status %d: %s", resp.StatusCode, string(body))
+		log.Warn().
+			Int("status", resp.StatusCode).
+			Str("body", string(body)).
+			Str("runner_id", runnerID).
+			Msg("Webhook notification failed, will be handled on next heartbeat")
+		return nil
 	}
 
-	log := gologger.WithComponent("task_handler")
 	log.Info().
 		Str("runner_id", runnerID).
-		Int("task_count", len(tasks)).
-		Str("webhook", runner.Webhook).
-		Msg("Successfully notified runner of available tasks")
-
+		Int("num_tasks", len(tasks)).
+		Msg("Successfully notified runner of tasks")
 	return nil
 }
 

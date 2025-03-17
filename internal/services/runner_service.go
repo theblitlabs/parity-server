@@ -20,11 +20,18 @@ type RunnerRepository interface {
 }
 
 type RunnerService struct {
-	repo RunnerRepository
+	repo        RunnerRepository
+	taskService *TaskService
 }
 
 func NewRunnerService(repo RunnerRepository) *RunnerService {
-	return &RunnerService{repo: repo}
+	return &RunnerService{
+		repo: repo,
+	}
+}
+
+func (s *RunnerService) SetTaskService(taskService *TaskService) {
+	s.taskService = taskService
 }
 
 func (s *RunnerService) CreateRunner(ctx context.Context, runner *models.Runner) error {
@@ -55,6 +62,8 @@ func (s *RunnerService) UpdateRunnerStatus(ctx context.Context, runner *models.R
 		return nil, err
 	}
 
+	wasOffline := existingRunner.Status == models.RunnerStatusOffline
+
 	// Update only the status, preserving other fields
 	existingRunner.Status = runner.Status
 
@@ -64,5 +73,15 @@ func (s *RunnerService) UpdateRunnerStatus(ctx context.Context, runner *models.R
 	}
 
 	// Update the runner in the database
-	return s.repo.Update(ctx, existingRunner)
+	updatedRunner, err := s.repo.Update(ctx, existingRunner)
+	if err != nil {
+		return nil, err
+	}
+
+	// If runner was offline and is now online, check for pending tasks
+	if wasOffline && runner.Status == models.RunnerStatusOnline && s.taskService != nil {
+		go s.taskService.CheckAndAssignTasks()
+	}
+
+	return updatedRunner, nil
 }

@@ -80,17 +80,19 @@ func RunServer() {
 	runnerService := services.NewRunnerService(runnerRepo)
 	taskService := services.NewTaskService(taskRepo, rewardCalculator.(*services.RewardCalculator), runnerService)
 	taskService.SetRewardClient(rewardClient)
+	runnerService.SetTaskService(taskService)
 
+	// Initialize scheduler with task monitoring
 	scheduler := gocron.NewScheduler(time.UTC)
-
-	if _, err := scheduler.Every(cfg.Scheduler.Interval).Minutes().Do(func() {
+	if _, err := scheduler.Every(30).Seconds().Do(func() {
 		taskService.MonitorTasks()
 	}); err != nil {
 		log.Error().Err(err).Msg("Failed to schedule task monitoring")
 	}
-
 	scheduler.StartAsync()
-	defer scheduler.Stop()
+
+	// Trigger initial task check
+	taskService.MonitorTasks()
 
 	webhookService := services.NewWebhookService(*taskService)
 	s3Service, err := services.NewS3Service(cfg.AWS.BucketName)
@@ -100,11 +102,8 @@ func RunServer() {
 	}
 	taskHandler := handlers.NewTaskHandler(taskService, webhookService, runnerService, s3Service)
 
+	// Set up internal stop channel for task handler
 	internalStopCh := make(chan struct{})
-	go func() {
-		<-shutdownCtx.Done()
-		close(internalStopCh)
-	}()
 	taskHandler.SetStopChannel(internalStopCh)
 
 	homeDir, err := os.UserHomeDir()
@@ -166,80 +165,78 @@ func RunServer() {
 		Handler: router,
 	}
 
+	// Start server in main goroutine
+	log.Info().
+		Str("address", fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)).
+		Msg("Server starting")
+
 	go func() {
 		<-stopChan
-		log.Info().
-			Msg("Shutdown signal received, gracefully shutting down...")
-		shutdownCancel()
-	}()
+		log.Info().Msg("Shutdown signal received, gracefully shutting down...")
 
-	go func() {
-		log.Info().
-			Str("address", fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)).
-			Msg("Server starting")
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("Server failed to start")
-		}
-	}()
-
-	<-shutdownCtx.Done()
-
-	go func() {
-		<-ctx.Done()
 		log.Info().Msg("Stopping scheduler...")
 		scheduler.Stop()
+
+		close(internalStopCh)
+
+		serverShutdownCtx, serverShutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer serverShutdownCancel()
+
+		log.Info().
+			Int("shutdown_timeout_seconds", 15).
+			Msg("Initiating server shutdown sequence")
+
+		shutdownStart := time.Now()
+		if err := server.Shutdown(serverShutdownCtx); err != nil {
+			log.Error().
+				Err(err).
+				Msg("Server shutdown error")
+			if err == context.DeadlineExceeded {
+				log.Warn().
+					Msg("Server shutdown deadline exceeded, forcing immediate shutdown")
+			}
+		} else {
+			shutdownDuration := time.Since(shutdownStart)
+			log.Info().
+				Dur("duration_ms", shutdownDuration).
+				Msg("Server HTTP connections gracefully closed")
+		}
+
+		// Clean up resources
+		log.Info().Msg("Starting webhook resource cleanup...")
+		cleanupStart := time.Now()
+		taskHandler.CleanupResources()
+		log.Info().
+			Dur("duration_ms", time.Since(cleanupStart)).
+			Msg("Webhook resources cleanup completed")
+
+		// Close database connection
+		dbCloseStart := time.Now()
+		sqlDB, err := db.DB()
+		if err != nil {
+			log.Error().Err(err).Msg("Error getting underlying *sql.DB instance")
+		} else {
+			if err := sqlDB.Close(); err != nil {
+				log.Error().Err(err).Msg("Error closing database connection")
+			} else {
+				log.Info().
+					Dur("duration_ms", time.Since(dbCloseStart)).
+					Msg("Database connection closed successfully")
+			}
+		}
+
+		log.Info().Msg("Shutdown complete")
 		shutdownCancel()
 	}()
 
-	serverShutdownCtx, serverShutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer serverShutdownCancel()
-
-	log.Info().
-		Int("shutdown_timeout_seconds", 15).
-		Msg("Initiating server shutdown sequence")
-
-	shutdownStart := time.Now()
-	if err := server.Shutdown(serverShutdownCtx); err != nil {
-		log.Error().
-			Err(err).
-			Msg("Server shutdown error")
-		if err == context.DeadlineExceeded {
-			log.Warn().
-				Msg("Server shutdown deadline exceeded, forcing immediate shutdown")
-		}
-	} else {
-		shutdownDuration := time.Since(shutdownStart)
-		log.Info().
-			Dur("duration_ms", shutdownDuration).
-			Msg("Server HTTP connections gracefully closed")
+	// Start server and handle errors
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal().Err(err).Msg("Server failed to start")
 	}
 
-	log.Info().Msg("Starting webhook resource cleanup...")
-	cleanupStart := time.Now()
-	taskHandler.CleanupResources()
-	log.Info().
-		Dur("duration_ms", time.Since(cleanupStart)).
-		Msg("Webhook resources cleanup completed")
-
-	dbCloseStart := time.Now()
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		log.Error().Err(err).Msg("Error getting underlying *sql.DB instance")
-	} else {
-		if err := sqlDB.Close(); err != nil {
-			log.Error().Err(err).Msg("Error closing database connection")
-		} else {
-			log.Info().
-				Dur("duration_ms", time.Since(dbCloseStart)).
-				Msg("Database connection closed successfully")
-		}
-	}
-
-	log.Info().Msg("Shutdown complete")
+	<-shutdownCtx.Done()
 }
 
-// pushTaskToRunner manually pushes a specific task to a runner via webhook
 func pushTaskToRunner(taskID string, runnerID string, cfg *config.Config) error {
 	log := gologger.WithComponent("task_push")
 
