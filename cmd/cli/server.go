@@ -88,18 +88,18 @@ func RunServer() {
 			Int("default_timeout_minutes", heartbeatTimeoutMinutes).
 			Msg("Heartbeat timeout not specified in config, using default")
 	}
-  
+
 	heartbeatService := services.NewHeartbeatService(runnerService)
 	heartbeatService.SetHeartbeatTimeout(time.Duration(heartbeatTimeoutMinutes) * time.Minute)
 	heartbeatService.SetCheckInterval(1 * time.Minute)
-  
-	webhookService := services.NewWebhookService(*taskService)
+
+	webhookService := services.NewWebhookService(taskService)
 	s3Service, err := services.NewS3Service(cfg.AWS.BucketName)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to initialize S3 service")
 		return
 	}
-	taskHandler := handlers.NewTaskHandler(taskService, webhookService, s3Service)
+	taskHandler := handlers.NewTaskHandler(taskService, webhookService, runnerService, s3Service)
 
 	if err := heartbeatService.Start(); err != nil {
 		log.Error().Err(err).Msg("Failed to start heartbeat monitoring service")
@@ -119,14 +119,6 @@ func RunServer() {
 			}
 		}
 	}()
-
-	webhookService := services.NewWebhookService(taskService)
-	s3Service, err := services.NewS3Service(cfg.AWS.BucketName)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to initialize S3 service")
-		return
-	}
-	taskHandler := handlers.NewTaskHandler(taskService, webhookService, runnerService, s3Service)
 
 	internalStopCh := make(chan struct{})
 	taskHandler.SetStopChannel(internalStopCh)
