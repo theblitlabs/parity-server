@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,11 +38,12 @@ type RewardCalculatorService interface {
 }
 
 type TaskService struct {
-	repo             TaskRepository
-	rewardCalculator *RewardCalculator
-	rewardClient     RewardClient
-	nonceService     *NonceService
-	runnerService    *RunnerService
+	repo                   TaskRepository
+	rewardCalculator       *RewardCalculator
+	rewardClient           RewardClient
+	nonceService           *NonceService
+	runnerService          *RunnerService
+	notificationInProgress sync.Map // Used to track in-progress notifications
 }
 
 func NewTaskService(repo TaskRepository, rewardCalculator *RewardCalculator, runnerService *RunnerService) *TaskService {
@@ -276,6 +278,14 @@ func (s *TaskService) CompleteTask(ctx context.Context, id string) error {
 		return err
 	}
 
+	// Check if task is already completed
+	if task.Status == models.TaskStatusCompleted {
+		log.Info().
+			Str("task_id", id).
+			Msg("Task already completed, ignoring duplicate completion request")
+		return nil
+	}
+
 	// Find and update the runner that was assigned to this task
 	runners, err := s.runnerService.ListRunnersByStatus(ctx, models.RunnerStatusBusy)
 	if err != nil {
@@ -339,6 +349,14 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 	task, err := s.repo.Get(ctx, result.TaskID)
 	if err != nil {
 		return fmt.Errorf("failed to get task: %w", err)
+	}
+
+	// Check if task is already completed to prevent duplicate submissions
+	if task.Status == models.TaskStatusCompleted {
+		log.Info().
+			Str("task_id", result.TaskID.String()).
+			Msg("Task already completed, ignoring duplicate result submission")
+		return nil
 	}
 
 	if !s.nonceService.VerifyNonce(task.Nonce, result.Output) {
@@ -581,7 +599,7 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 	go func() {
 		ctx := context.Background()
 		backoff := time.Second
-		maxRetries := 5
+		maxRetries := 3 // Reduced from 5 to 3 retries
 		var notificationSent bool
 
 		// Check if task is still assigned to this runner and not completed
@@ -593,6 +611,7 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 			return
 		}
 
+		// Skip notification if task is not in running state
 		if currentTask.Status != models.TaskStatusRunning {
 			log.Info().
 				Str("task_id", task.ID.String()).
@@ -600,6 +619,35 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 				Msg("Task no longer in running state, skipping webhook notification")
 			return
 		}
+
+		// Check if runner is still assigned to this task
+		currentRunner, err := s.runnerService.GetRunner(ctx, runner.DeviceID)
+		if err != nil {
+			log.Error().Err(err).
+				Str("runner_id", runner.DeviceID).
+				Msg("Failed to get runner status before notification")
+			return
+		}
+
+		if currentRunner.TaskID == nil || *currentRunner.TaskID != task.ID {
+			log.Info().
+				Str("runner_id", runner.DeviceID).
+				Str("task_id", task.ID.String()).
+				Msg("Runner no longer assigned to this task, skipping notification")
+			return
+		}
+
+		// Check if this task has a notification in progress
+		// This helps prevent duplicate notifications when multiple assignment attempts occur
+		taskKey := task.ID.String()
+		if _, exists := s.notificationInProgress.LoadOrStore(taskKey, true); exists {
+			log.Info().
+				Str("task_id", task.ID.String()).
+				Str("runner_id", runner.DeviceID).
+				Msg("Notification already in progress for this task, skipping duplicate")
+			return
+		}
+		defer s.notificationInProgress.Delete(taskKey)
 
 		for i := 0; i < maxRetries; i++ {
 			// Before each retry, verify task is still valid for notification
@@ -667,8 +715,9 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 				Msg("Failed to notify runner about task after all retries")
 		}
 
-		// If notification failed after all retries, mark task as failed
-		if !notificationSent {
+		// If notification failed after all retries but task was completed successfully,
+		// don't mark it as failed since the runner might have received the task through polling
+		if !notificationSent && currentTask.Status == models.TaskStatusRunning {
 			task.Status = models.TaskStatusFailed
 			if err := s.repo.Update(ctx, task); err != nil {
 				log.Error().Err(err).

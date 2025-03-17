@@ -429,7 +429,7 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 
 	// Check if task is already assigned to this runner
 	needsAssignment := true
-	if task.Status == models.TaskStatusRunning {
+	if task.Status == models.TaskStatusRunning || task.Status == models.TaskStatusPending {
 		runner, err := h.runnerService.GetRunner(ctx, runnerID)
 		if err != nil {
 			log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to get runner")
@@ -437,12 +437,22 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Check if task is already assigned to this runner
 		if runner.TaskID != nil && *runner.TaskID == task.ID {
 			log.Info().
 				Str("task_id", taskID).
 				Str("runner_id", runnerID).
 				Msg("Task already assigned to this runner, proceeding with start")
 			needsAssignment = false
+		} else if runner.TaskID != nil {
+			// Task is assigned to a different runner
+			log.Warn().
+				Str("task_id", taskID).
+				Str("runner_id", runnerID).
+				Str("assigned_runner", runner.TaskID.String()).
+				Msg("Task is already assigned to a different runner")
+			http.Error(w, "Task is already assigned to a different runner", http.StatusConflict)
+			return
 		}
 	}
 
@@ -488,7 +498,11 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.NotifyTaskUpdate()
+	// Only notify about task updates if this was a new assignment
+	// This prevents duplicate notifications to the runner
+	if needsAssignment {
+		h.NotifyTaskUpdate()
+	}
 
 	log.Info().
 		Str("task_id", taskID).

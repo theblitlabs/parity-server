@@ -91,9 +91,6 @@ func RunServer() {
 	}
 	scheduler.StartAsync()
 
-	// Trigger initial task check
-	taskService.MonitorTasks()
-
 	webhookService := services.NewWebhookService(*taskService)
 	s3Service, err := services.NewS3Service(cfg.AWS.BucketName)
 	if err != nil {
