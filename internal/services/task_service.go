@@ -173,9 +173,7 @@ func (s *TaskService) AssignTaskToRunner(ctx context.Context, taskID string, dev
 		return nil
 	}
 
-	// Check if task is already running or completed
 	if task.Status == models.TaskStatusRunning {
-		// If task is running but not assigned to this runner, it's assigned to another runner
 		log.Warn().
 			Str("task_id", taskID).
 			Str("runner_id", deviceID).
@@ -199,7 +197,6 @@ func (s *TaskService) AssignTaskToRunner(ctx context.Context, taskID string, dev
 		return errors.New("invalid docker config")
 	}
 
-	// Use assignTasksToRunner for consistent assignment and notification
 	err = s.assignTasksToRunner([]*models.Task{task}, []*models.Runner{runner})
 	if err != nil {
 		log.Error().
@@ -256,7 +253,6 @@ func (s *TaskService) StartTask(ctx context.Context, id string) error {
 		return err
 	}
 
-	// Check if task is already running or completed
 	if task.Status == models.TaskStatusRunning {
 		log.Info().Str("task_id", id).Msg("Task is already running")
 		return nil
@@ -507,15 +503,12 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 		Int("tasks", len(pendingTasks)).
 		Msg("Starting task assignment")
 
-	// For each pending task, try to assign to an available runner
 	for _, task := range pendingTasks {
 		for _, runner := range availableRunnerList {
-			// Skip if runner is already busy
 			if runner.Status == models.RunnerStatusBusy {
 				continue
 			}
 
-			// Update task status to running
 			task.Status = models.TaskStatusRunning
 			task.UpdatedAt = time.Now()
 			if err := s.repo.Update(ctx, task); err != nil {
@@ -525,7 +518,6 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 				continue
 			}
 
-			// Update runner status and assign task
 			runner.Status = models.RunnerStatusBusy
 			runner.TaskID = &task.ID
 			runner.Task = task
@@ -537,7 +529,6 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 					Str("task_id", task.ID.String()).
 					Msg("Failed to update runner status")
 
-				// Revert task status
 				task.Status = models.TaskStatusPending
 				if revertErr := s.repo.Update(ctx, task); revertErr != nil {
 					log.Error().Err(revertErr).
@@ -547,15 +538,12 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 				continue
 			}
 
-			// Notify runner about the task
 			if err := s.notifyRunnerAboutTask(updatedRunner, task); err != nil {
 				log.Error().
 					Err(err).
 					Str("runner_id", updatedRunner.DeviceID).
 					Str("task_id", task.ID.String()).
 					Msg("Failed to notify runner about task")
-				// Don't revert assignment if notification fails
-				// Runner will get task through polling
 			} else {
 				log.Info().
 					Str("runner_id", updatedRunner.DeviceID).
@@ -564,7 +552,6 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 					Msg("Runner notified about task")
 			}
 
-			// Successfully assigned and notified, move to next task
 			break
 		}
 	}
@@ -582,8 +569,6 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 		return nil
 	}
 
-	// Check if this task has a notification in progress
-	// This helps prevent duplicate notifications when multiple assignment attempts occur
 	taskKey := "notify_" + task.ID.String() + "_" + runner.DeviceID
 	if _, exists := s.notificationInProgress.LoadOrStore(taskKey, true); exists {
 		log.Info().
@@ -599,17 +584,14 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 		Str("webhook_url", runner.Webhook).
 		Msg("Notifying runner about task")
 
-	// Create a new background context for async webhook notifications
-	// This ensures the webhook retries aren't affected by the parent context
 	go func() {
 		defer s.notificationInProgress.Delete(taskKey)
 
 		ctx := context.Background()
 		backoff := time.Second
-		maxRetries := 3 // Reduced from 5 to 3 retries
+		maxRetries := 3
 		var notificationSent bool
 
-		// Check if task is still assigned to this runner and not completed
 		currentTask, err := s.repo.Get(ctx, task.ID)
 		if err != nil {
 			log.Error().Err(err).
@@ -618,7 +600,6 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 			return
 		}
 
-		// Skip notification if task is not in running state
 		if currentTask.Status != models.TaskStatusRunning {
 			log.Info().
 				Str("task_id", task.ID.String()).
@@ -627,7 +608,6 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 			return
 		}
 
-		// Check if runner is still assigned to this task
 		currentRunner, err := s.runnerService.GetRunner(ctx, runner.DeviceID)
 		if err != nil {
 			log.Error().Err(err).
@@ -645,7 +625,6 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 		}
 
 		for i := 0; i < maxRetries; i++ {
-			// Before each retry, verify task is still valid for notification
 			if i > 0 {
 				currentTask, err := s.repo.Get(ctx, task.ID)
 				if err != nil {
@@ -663,7 +642,6 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 					return
 				}
 
-				// Check if runner is still assigned to this task
 				currentRunner, err := s.runnerService.GetRunner(ctx, runner.DeviceID)
 				if err != nil {
 					log.Error().Err(err).
@@ -712,10 +690,7 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 				Msg("Failed to notify runner about task after all retries")
 		}
 
-		// If notification failed after all retries but task was completed successfully,
-		// don't mark it as failed since the runner might have received the task through polling
 		if !notificationSent {
-			// Get the latest task status before deciding to mark as failed
 			currentTask, err := s.repo.Get(ctx, task.ID)
 			if err != nil {
 				log.Error().Err(err).
@@ -724,7 +699,6 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 				return
 			}
 
-			// Only mark as failed if still in running state and not completed through other means
 			if currentTask.Status == models.TaskStatusRunning {
 				task.Status = models.TaskStatusFailed
 				if err := s.repo.Update(ctx, task); err != nil {
@@ -742,7 +716,7 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 
 func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *models.Runner, task *models.Task) error {
 	client := &http.Client{
-		Timeout: 10 * time.Second, // Increased timeout for better reliability
+		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
 			MaxIdleConns:       10,
 			IdleConnTimeout:    30 * time.Second,

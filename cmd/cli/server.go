@@ -81,8 +81,24 @@ func RunServer() {
 	taskService.SetRewardClient(rewardClient)
 	runnerService.SetTaskService(taskService)
 
-	// Start periodic task monitor
+	heartbeatTimeoutMinutes := cfg.Scheduler.Interval
+	if heartbeatTimeoutMinutes <= 0 {
+		heartbeatTimeoutMinutes = 5
+		log.Warn().
+			Int("default_timeout_minutes", heartbeatTimeoutMinutes).
+			Msg("Heartbeat timeout not specified in config, using default")
+	}
+
+	heartbeatService := services.NewHeartbeatService(runnerService)
+	heartbeatService.SetHeartbeatTimeout(time.Duration(heartbeatTimeoutMinutes) * time.Minute)
+	heartbeatService.SetCheckInterval(1 * time.Minute)
+
+	if err := heartbeatService.Start(); err != nil {
+		log.Error().Err(err).Msg("Failed to start heartbeat monitoring service")
+	}
+
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
+	defer monitorCancel()
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
@@ -96,7 +112,6 @@ func RunServer() {
 		}
 	}()
 
-	// Initialize webhook service and S3 service
 	webhookService := services.NewWebhookService(taskService)
 	s3Service, err := services.NewS3Service(cfg.AWS.BucketName)
 	if err != nil {
@@ -105,7 +120,6 @@ func RunServer() {
 	}
 	taskHandler := handlers.NewTaskHandler(taskService, webhookService, runnerService, s3Service)
 
-	// Set up internal stop channel for task handler
 	internalStopCh := make(chan struct{})
 	taskHandler.SetStopChannel(internalStopCh)
 
@@ -127,7 +141,6 @@ func RunServer() {
 		log.Fatal().Err(err).Msg("Failed to get private key - please authenticate first")
 	}
 
-	// Create wallet client
 	walletClient, err := walletsdk.NewClient(walletsdk.ClientConfig{
 		RPCURL:       cfg.Ethereum.RPC,
 		ChainID:      cfg.Ethereum.ChainID,
@@ -168,7 +181,6 @@ func RunServer() {
 		Handler: router,
 	}
 
-	// Start server in main goroutine
 	log.Info().
 		Str("address", fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)).
 		Msg("Server starting")
@@ -179,6 +191,17 @@ func RunServer() {
 
 		close(internalStopCh)
 		monitorCancel()
+
+		heartbeatService.Stop()
+		log.Info().Msg("Stopped heartbeat monitoring service")
+
+		if runnerService != nil {
+			if err := runnerService.StopTaskMonitor(); err != nil {
+				log.Warn().Err(err).Msg("Error stopping task monitor")
+			} else {
+				log.Info().Msg("Stopped task monitor")
+			}
+		}
 
 		serverShutdownCtx, serverShutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer serverShutdownCancel()
@@ -203,7 +226,6 @@ func RunServer() {
 				Msg("Server HTTP connections gracefully closed")
 		}
 
-		// Clean up resources
 		log.Info().Msg("Starting webhook resource cleanup...")
 		cleanupStart := time.Now()
 		taskHandler.CleanupResources()
@@ -211,7 +233,6 @@ func RunServer() {
 			Dur("duration_ms", time.Since(cleanupStart)).
 			Msg("Webhook resources cleanup completed")
 
-		// Close database connection
 		dbCloseStart := time.Now()
 		sqlDB, err := db.DB()
 		if err != nil {
@@ -230,7 +251,6 @@ func RunServer() {
 		shutdownCancel()
 	}()
 
-	// Start server and handle errors
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal().Err(err).Msg("Server failed to start")
 	}
@@ -255,12 +275,10 @@ func pushTaskToRunner(taskID string, runnerID string, cfg *config.Config) error 
 	}
 	defer sqlDB.Close()
 
-	// Get repositories and services
 	taskRepo := repositories.NewTaskRepository(db)
 	runnerRepo := repositories.NewRunnerRepository(db)
 	runnerService := services.NewRunnerService(runnerRepo)
 
-	// Get the task
 	taskUUID, err := uuid.Parse(taskID)
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %w", err)
@@ -271,7 +289,6 @@ func pushTaskToRunner(taskID string, runnerID string, cfg *config.Config) error 
 		return fmt.Errorf("failed to get task: %w", err)
 	}
 
-	// Get the runner
 	runner, err := runnerService.GetRunner(ctx, runnerID)
 	if err != nil {
 		return fmt.Errorf("failed to get runner: %w", err)
@@ -281,7 +298,6 @@ func pushTaskToRunner(taskID string, runnerID string, cfg *config.Config) error 
 		return fmt.Errorf("runner has no webhook URL")
 	}
 
-	// Prepare the webhook message
 	type WebhookMessage struct {
 		Type    string          `json:"type"`
 		Payload json.RawMessage `json:"payload"`
@@ -303,7 +319,6 @@ func pushTaskToRunner(taskID string, runnerID string, cfg *config.Config) error 
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	// Send the webhook
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Post(runner.Webhook, "application/json", bytes.NewBuffer(messageJSON))
 	if err != nil {
