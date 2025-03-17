@@ -14,6 +14,7 @@ type Runner struct {
 	Webhook       string       `gorm:"type:varchar(255)"`
 	TaskID        *uuid.UUID   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
 	Task          *Task        `gorm:"foreignKey:TaskID"`
+	LastHeartbeat time.Time    `gorm:"type:timestamp;default:now()"`
 	CreatedAt     time.Time    `gorm:"autoCreateTime"`
 	UpdatedAt     time.Time    `gorm:"autoUpdateTime"`
 }

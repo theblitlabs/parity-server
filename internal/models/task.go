@@ -25,11 +25,25 @@ const (
 	TaskTypeCommand TaskType = "command"
 )
 
+type DockerConfig struct {
+	Image   string   `json:"image"`
+	Workdir string   `json:"workdir"`
+	Command []string `json:"command,omitempty"`
+}
+
 type TaskConfig struct {
-	FileURL   string            `json:"file_url,omitempty"`
-	Command   []string          `json:"command,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
-	Resources ResourceConfig    `json:"resources,omitempty"`
+	FileURL        string            `json:"file_url,omitempty"`
+	Command        []string          `json:"command,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
+	Resources      ResourceConfig    `json:"resources,omitempty"`
+	DockerImageURL string            `json:"docker_image_url,omitempty"`
+	ImageName      string            `json:"image_name,omitempty"`
+}
+
+type ResourceConfig struct {
+	Memory    string `json:"memory,omitempty"`
+	CPUShares int64  `json:"cpu_shares,omitempty"`
+	Timeout   string `json:"timeout,omitempty"`
 }
 
 func (c *TaskConfig) Validate(taskType TaskType) error {
@@ -37,6 +51,13 @@ func (c *TaskConfig) Validate(taskType TaskType) error {
 	case TaskTypeDocker:
 		if len(c.Command) == 0 {
 			return errors.New("command is required for Docker tasks")
+		}
+		if c.ImageName == "" {
+			return errors.New("image name is required for Docker tasks")
+		}
+		// For Docker tasks with uploaded images, ensure we have a URL
+		if c.DockerImageURL == "" && c.FileURL == "" {
+			return errors.New("either docker image URL or file URL is required for Docker tasks")
 		}
 	case TaskTypeCommand:
 		if len(c.Command) == 0 {
@@ -46,12 +67,6 @@ func (c *TaskConfig) Validate(taskType TaskType) error {
 		return fmt.Errorf("unsupported task type: %s", taskType)
 	}
 	return nil
-}
-
-type ResourceConfig struct {
-	Memory    string `json:"memory,omitempty"`
-	CPUShares int64  `json:"cpu_shares,omitempty"`
-	Timeout   string `json:"timeout,omitempty"`
 }
 
 type Task struct {
@@ -64,7 +79,6 @@ type Task struct {
 	Environment     *EnvironmentConfig `json:"environment" gorm:"type:jsonb"`
 	CreatorAddress  string             `json:"creator_address" gorm:"type:varchar(42)"`
 	CreatorDeviceID string             `json:"creator_device_id" gorm:"type:varchar(255)"`
-	RunnerID        *uuid.UUID         `json:"runner_id" gorm:"type:uuid"`
 	Nonce           string             `json:"nonce" gorm:"type:varchar(64);not null"`
 	CreatedAt       time.Time          `json:"created_at" gorm:"type:timestamp"`
 	UpdatedAt       time.Time          `json:"updated_at" gorm:"type:timestamp"`
@@ -73,7 +87,6 @@ type Task struct {
 
 // NewTask creates a new Task with a generated UUID and nonce
 func NewTask() *Task {
-
 	t := &Task{
 		ID:        uuid.New(),
 		Status:    TaskStatusPending,

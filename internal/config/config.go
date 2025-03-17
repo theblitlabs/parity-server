@@ -5,9 +5,11 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Ethereum EthereumConfig `mapstructure:"ethereum"`
+	Server    ServerConfig    `mapstructure:"server"`
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Ethereum  EthereumConfig  `mapstructure:"ethereum"`
+	AWS       AWSConfig       `mapstructure:"aws"`
+	Scheduler SchedulerConfig `mapstructure:"scheduler"`
 }
 
 type ServerConfig struct {
@@ -20,11 +22,20 @@ type DatabaseConfig struct {
 	URL string `mapstructure:"url"`
 }
 
+type AWSConfig struct {
+	Region     string `mapstructure:"region"`
+	BucketName string `mapstructure:"bucket_name"`
+}
+
 type EthereumConfig struct {
 	RPC                string `mapstructure:"rpc"`
 	ChainID            int64  `mapstructure:"chain_id"`
 	TokenAddress       string `mapstructure:"token_address"`
 	StakeWalletAddress string `mapstructure:"stake_wallet_address"`
+}
+
+type SchedulerConfig struct {
+	Interval int `mapstructure:"interval"`
 }
 
 func LoadConfig(path string) (*Config, error) {
