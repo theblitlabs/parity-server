@@ -421,7 +421,7 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 func (s *TaskService) MonitorTasks() {
 	log := gologger.WithComponent("task_monitor")
 
-	log.Info().Msg("Checking for tasks")
+	log.Debug().Msg("Checking for pending tasks")
 
 	tasks, err := s.repo.ListByStatus(context.Background(), models.TaskStatusPending)
 	if err != nil {
@@ -435,18 +435,18 @@ func (s *TaskService) MonitorTasks() {
 		return
 	}
 
-	log.Info().
+	log.Debug().
 		Int("pending_tasks", len(tasks)).
 		Int("online_runners", len(runners)).
 		Msg("Task assignment status")
 
 	if len(runners) == 0 {
-		log.Warn().Msg("No runners available")
+		log.Debug().Msg("No runners available")
 		return
 	}
 
 	if len(tasks) == 0 {
-		log.Info().Msg("No pending tasks available")
+		log.Debug().Msg("No pending tasks available")
 		return
 	}
 

@@ -28,7 +28,6 @@ import (
 	"github.com/theblitlabs/parity-server/internal/models"
 	"github.com/theblitlabs/parity-server/internal/services"
 
-	"github.com/go-co-op/gocron"
 	"github.com/google/uuid"
 )
 
@@ -82,15 +81,7 @@ func RunServer() {
 	taskService.SetRewardClient(rewardClient)
 	runnerService.SetTaskService(taskService)
 
-	// Initialize scheduler with task monitoring
-	scheduler := gocron.NewScheduler(time.UTC)
-	if _, err := scheduler.Every(30).Seconds().Do(func() {
-		taskService.MonitorTasks()
-	}); err != nil {
-		log.Error().Err(err).Msg("Failed to schedule task monitoring")
-	}
-	scheduler.StartAsync()
-
+	// Initialize webhook service and S3 service
 	webhookService := services.NewWebhookService(*taskService)
 	s3Service, err := services.NewS3Service(cfg.AWS.BucketName)
 	if err != nil {
@@ -170,9 +161,6 @@ func RunServer() {
 	go func() {
 		<-stopChan
 		log.Info().Msg("Shutdown signal received, gracefully shutting down...")
-
-		log.Info().Msg("Stopping scheduler...")
-		scheduler.Stop()
 
 		close(internalStopCh)
 

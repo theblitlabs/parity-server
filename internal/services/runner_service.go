@@ -43,7 +43,30 @@ func (s *RunnerService) GetRunner(ctx context.Context, deviceID string) (*models
 }
 
 func (s *RunnerService) CreateOrUpdateRunner(ctx context.Context, runner *models.Runner) (*models.Runner, error) {
-	return s.repo.CreateOrUpdate(ctx, runner)
+	// Check if runner exists
+	existingRunner, err := s.repo.Get(ctx, runner.DeviceID)
+
+	// Determine if this is a new runner or one becoming available
+	isNewOrBecomingAvailable := false
+
+	if err != nil {
+		isNewOrBecomingAvailable = runner.Status == models.RunnerStatusOnline
+	} else {
+		isNewOrBecomingAvailable = (existingRunner.Status == models.RunnerStatusOffline ||
+			existingRunner.Status == models.RunnerStatusBusy) &&
+			runner.Status == models.RunnerStatusOnline
+	}
+
+	updatedRunner, err := s.repo.CreateOrUpdate(ctx, runner)
+	if err != nil {
+		return nil, err
+	}
+
+	if isNewOrBecomingAvailable && s.taskService != nil {
+		go s.taskService.CheckAndAssignTasks()
+	}
+
+	return updatedRunner, nil
 }
 
 func (s *RunnerService) UpdateRunner(ctx context.Context, runner *models.Runner) (*models.Runner, error) {
@@ -62,7 +85,10 @@ func (s *RunnerService) UpdateRunnerStatus(ctx context.Context, runner *models.R
 		return nil, err
 	}
 
-	wasOffline := existingRunner.Status == models.RunnerStatusOffline
+	// Check if runner is becoming available
+	becomingAvailable := (existingRunner.Status == models.RunnerStatusOffline ||
+		existingRunner.Status == models.RunnerStatusBusy) &&
+		runner.Status == models.RunnerStatusOnline
 
 	// Update only the status, preserving other fields
 	existingRunner.Status = runner.Status
@@ -78,8 +104,8 @@ func (s *RunnerService) UpdateRunnerStatus(ctx context.Context, runner *models.R
 		return nil, err
 	}
 
-	// If runner was offline and is now online, check for pending tasks
-	if wasOffline && runner.Status == models.RunnerStatusOnline && s.taskService != nil {
+	// If runner is becoming available, check for pending tasks
+	if becomingAvailable && s.taskService != nil {
 		go s.taskService.CheckAndAssignTasks()
 	}
 
