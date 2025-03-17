@@ -427,49 +427,52 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if task is already assigned to this runner
-	needsAssignment := true
-	if task.Status == models.TaskStatusRunning || task.Status == models.TaskStatusPending {
-		runner, err := h.runnerService.GetRunner(ctx, runnerID)
-		if err != nil {
-			log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to get runner")
-			http.Error(w, fmt.Sprintf("Failed to get runner: %v", err), http.StatusInternalServerError)
-			return
-		}
+	// If task is already completed, return early
+	if task.Status == models.TaskStatusCompleted {
+		log.Warn().Str("task_id", taskID).Msg("Cannot start already completed task")
+		http.Error(w, "Task is already completed", http.StatusConflict)
+		return
+	}
 
-		// Check if task is already assigned to this runner
+	// Check if task is already assigned to this runner
+	runner, err := h.runnerService.GetRunner(ctx, runnerID)
+	if err != nil {
+		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to get runner")
+		http.Error(w, fmt.Sprintf("Failed to get runner: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// If task is already running and assigned to this runner, we can proceed
+	if task.Status == models.TaskStatusRunning {
 		if runner.TaskID != nil && *runner.TaskID == task.ID {
 			log.Info().
 				Str("task_id", taskID).
 				Str("runner_id", runnerID).
-				Msg("Task already assigned to this runner, proceeding with start")
-			needsAssignment = false
-		} else if runner.TaskID != nil {
-			// Task is assigned to a different runner
+				Msg("Task already assigned to this runner and running")
+			w.WriteHeader(http.StatusOK)
+			return
+		} else {
+			// Task is running but not by this runner
 			log.Warn().
 				Str("task_id", taskID).
 				Str("runner_id", runnerID).
-				Str("assigned_runner", runner.TaskID.String()).
-				Msg("Task is already assigned to a different runner")
+				Msg("Task is already running by another runner")
 			http.Error(w, "Task is already assigned to a different runner", http.StatusConflict)
 			return
 		}
 	}
 
-	// Only assign if needed
-	if needsAssignment {
+	// Only try to assign if task is in pending state
+	if task.Status == models.TaskStatusPending {
 		if err := h.service.AssignTaskToRunner(ctx, taskID, runnerID); err != nil {
-			// If the error indicates the task is unavailable, respond with a clear message
 			if err.Error() == "task unavailable" {
 				log.Warn().
 					Str("task_id", taskID).
 					Str("runner_id", runnerID).
-					Str("status", string(task.Status)).
 					Msg("Task is unavailable for assignment")
 				http.Error(w, "Task is unavailable for assignment", http.StatusConflict)
 				return
 			}
-
 			log.Error().Err(err).
 				Str("task_id", taskID).
 				Str("runner_id", runnerID).
@@ -478,30 +481,28 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Info().
-			Str("task_id", taskID).
-			Str("runner_id", runnerID).
-			Msg("Task assigned to runner")
-	}
-
-	// Now start the task
-	if err := h.service.StartTask(ctx, taskID); err != nil {
-		// For some errors, we don't want to return 500
-		if err.Error() == "task already completed" {
-			log.Warn().Str("task_id", taskID).Msg("Cannot start already completed task")
-			http.Error(w, "Task is already completed", http.StatusConflict)
+		// Get updated task after assignment
+		task, err = h.service.GetTask(ctx, taskID)
+		if err != nil {
+			log.Error().Err(err).Str("task_id", taskID).Msg("Failed to get updated task")
+			http.Error(w, fmt.Sprintf("Failed to get updated task: %v", err), http.StatusInternalServerError)
 			return
 		}
-
-		log.Error().Err(err).Str("task_id", taskID).Msg("Failed to start task")
-		http.Error(w, fmt.Sprintf("Failed to start task: %v", err), http.StatusInternalServerError)
-		return
 	}
 
-	// Only notify about task updates if this was a new assignment
-	// This prevents duplicate notifications to the runner
-	if needsAssignment {
-		h.NotifyTaskUpdate()
+	// Start the task if it's not already running
+	if task.Status != models.TaskStatusRunning {
+		if err := h.service.StartTask(ctx, taskID); err != nil {
+			if err.Error() == "task already completed" {
+				log.Warn().Str("task_id", taskID).Msg("Cannot start already completed task")
+				http.Error(w, "Task is already completed", http.StatusConflict)
+				return
+			}
+
+			log.Error().Err(err).Str("task_id", taskID).Msg("Failed to start task")
+			http.Error(w, fmt.Sprintf("Failed to start task: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	log.Info().

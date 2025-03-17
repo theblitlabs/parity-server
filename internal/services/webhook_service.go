@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/theblitlabs/gologger"
+	"github.com/theblitlabs/parity-server/internal/models"
 )
 
 type WebhookRegistration struct {
@@ -32,15 +33,20 @@ type WSMessage struct {
 	Payload interface{} `json:"payload"`
 }
 
+// TaskServicer defines the interface for task-related operations needed by WebhookService
+type TaskServicer interface {
+	ListAvailableTasks(ctx context.Context) ([]*models.Task, error)
+}
+
 type WebhookService struct {
 	webhooks     map[string]WebhookRegistration
 	webhookMutex sync.RWMutex
-	taskService  TaskService
+	taskService  TaskServicer
 	stopCh       chan struct{}
 	taskUpdateCh chan struct{}
 }
 
-func NewWebhookService(taskService TaskService) *WebhookService {
+func NewWebhookService(taskService TaskServicer) *WebhookService {
 	return &WebhookService{
 		webhooks:     make(map[string]WebhookRegistration),
 		taskService:  taskService,

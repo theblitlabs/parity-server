@@ -81,8 +81,23 @@ func RunServer() {
 	taskService.SetRewardClient(rewardClient)
 	runnerService.SetTaskService(taskService)
 
+	// Start periodic task monitor
+	monitorCtx, monitorCancel := context.WithCancel(context.Background())
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-monitorCtx.Done():
+				return
+			case <-ticker.C:
+				taskService.MonitorTasks()
+			}
+		}
+	}()
+
 	// Initialize webhook service and S3 service
-	webhookService := services.NewWebhookService(*taskService)
+	webhookService := services.NewWebhookService(taskService)
 	s3Service, err := services.NewS3Service(cfg.AWS.BucketName)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to initialize S3 service")
@@ -163,6 +178,7 @@ func RunServer() {
 		log.Info().Msg("Shutdown signal received, gracefully shutting down...")
 
 		close(internalStopCh)
+		monitorCancel()
 
 		serverShutdownCtx, serverShutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer serverShutdownCancel()

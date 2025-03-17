@@ -62,8 +62,9 @@ func (s *RunnerService) CreateOrUpdateRunner(ctx context.Context, runner *models
 		return nil, err
 	}
 
+	// If runner becomes available, let TaskMonitor handle task assignment
 	if isNewOrBecomingAvailable && s.taskService != nil {
-		go s.taskService.CheckAndAssignTasks()
+		go s.taskService.MonitorTasks()
 	}
 
 	return updatedRunner, nil
@@ -104,9 +105,9 @@ func (s *RunnerService) UpdateRunnerStatus(ctx context.Context, runner *models.R
 		return nil, err
 	}
 
-	// If runner is becoming available, check for pending tasks
+	// If runner becomes available, let TaskMonitor handle task assignment
 	if becomingAvailable && s.taskService != nil {
-		go s.taskService.CheckAndAssignTasks()
+		go s.taskService.MonitorTasks()
 	}
 
 	return updatedRunner, nil
