@@ -417,24 +417,23 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 	log := gologger.WithComponent("task_assign")
 
 	var batchSize = 1
-	var availableRunners = len(runners)
-	var runner_iterator = 0
-	var assignedTasks = 0
-
-	// Filter out busy runners
+	// Filter out busy runners first
 	availableRunnerList := make([]*models.Runner, 0, len(runners))
 	for _, runner := range runners {
-		if runner.Status == models.RunnerStatusOnline {
+		if runner.Status != models.RunnerStatusBusy {
 			availableRunnerList = append(availableRunnerList, runner)
 		}
 	}
 
-	if len(availableRunnerList) == 0 {
-		log.Warn().Msg("No available runners with online status")
-		return fmt.Errorf("no available runners")
+	availableRunners := len(availableRunnerList)
+	if availableRunners == 0 {
+		log.Warn().Msg("No available runners to assign tasks")
+		return nil
 	}
 
-	availableRunners = len(availableRunnerList)
+	var runner_iterator = 0
+	var assignedTasks = 0
+
 	log.Info().Int("available_runners", availableRunners).Int("tasks", len(tasks)).Msg("Starting task assignment")
 
 	for i := 0; i < len(tasks) && runner_iterator < len(availableRunnerList); i++ {

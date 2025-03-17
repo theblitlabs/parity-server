@@ -650,7 +650,6 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 }
 
 func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
-	log := gologger.Get()
 	tasks, err := h.service.GetTasks(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -658,7 +657,8 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(tasks); err != nil {
-		log.Error().Err(err).Msg("Failed to encode tasks response")
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -721,7 +721,10 @@ func (h *TaskHandler) ListAvailableTasks(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tasks)
+	if err := json.NewEncoder(w).Encode(tasks); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *TaskHandler) NotifyRunnerOfTasks(runnerID string, tasks []*models.Task) error {
@@ -850,7 +853,10 @@ func (h *TaskHandler) RegisterRunner(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(savedRunner)
+	if err := json.NewEncoder(w).Encode(savedRunner); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }
 
 // RunnerHeartbeat handles heartbeat messages from runners
