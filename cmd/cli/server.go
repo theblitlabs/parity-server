@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -22,9 +25,11 @@ import (
 	"github.com/theblitlabs/parity-server/internal/config"
 	"github.com/theblitlabs/parity-server/internal/database"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
+	"github.com/theblitlabs/parity-server/internal/models"
 	"github.com/theblitlabs/parity-server/internal/services"
 
 	"github.com/go-co-op/gocron"
+	"github.com/google/uuid"
 )
 
 func verifyPortAvailable(host string, port string) error {
@@ -232,4 +237,92 @@ func RunServer() {
 	}
 
 	log.Info().Msg("Shutdown complete")
+}
+
+// pushTaskToRunner manually pushes a specific task to a runner via webhook
+func pushTaskToRunner(taskID string, runnerID string, cfg *config.Config) error {
+	log := gologger.WithComponent("task_push")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	db, err := database.Connect(ctx, cfg.Database.URL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("error getting *sql.DB: %w", err)
+	}
+	defer sqlDB.Close()
+
+	// Get repositories and services
+	taskRepo := repositories.NewTaskRepository(db)
+	runnerRepo := repositories.NewRunnerRepository(db)
+	runnerService := services.NewRunnerService(runnerRepo)
+
+	// Get the task
+	taskUUID, err := uuid.Parse(taskID)
+	if err != nil {
+		return fmt.Errorf("invalid task ID: %w", err)
+	}
+
+	task, err := taskRepo.Get(ctx, taskUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get task: %w", err)
+	}
+
+	// Get the runner
+	runner, err := runnerService.GetRunner(ctx, runnerID)
+	if err != nil {
+		return fmt.Errorf("failed to get runner: %w", err)
+	}
+
+	if runner.Webhook == "" {
+		return fmt.Errorf("runner has no webhook URL")
+	}
+
+	// Prepare the webhook message
+	type WebhookMessage struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload"`
+	}
+
+	tasks := []*models.Task{task}
+	tasksJSON, err := json.Marshal(tasks)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tasks: %w", err)
+	}
+
+	message := WebhookMessage{
+		Type:    "available_tasks",
+		Payload: tasksJSON,
+	}
+
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	// Send the webhook
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(runner.Webhook, "application/json", bytes.NewBuffer(messageJSON))
+	if err != nil {
+		return fmt.Errorf("failed to send webhook: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("webhook failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Info().
+		Str("task_id", taskID).
+		Str("runner_id", runnerID).
+		Str("webhook", runner.Webhook).
+		Msg("Successfully pushed task to runner")
+
+	return nil
 }

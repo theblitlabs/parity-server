@@ -1,9 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -81,6 +85,37 @@ func (s *TaskService) CreateTask(ctx context.Context, task *models.Task) error {
 		log.Error().Err(err).Str("id", task.ID.String()).Msg("Failed to create task")
 		return err
 	}
+
+	// Immediately try to assign the task to an available runner
+	go func() {
+		log.Info().Str("task_id", task.ID.String()).Msg("Attempting to assign newly created task to runners")
+
+		// Create a new context for the assignment operation
+		assignCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Get available runners
+		runners, err := s.runnerService.ListRunnersByStatus(assignCtx, models.RunnerStatusOnline)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to list available runners for immediate task assignment")
+			return
+		}
+
+		if len(runners) == 0 {
+			log.Warn().Msg("No available runners to assign newly created task")
+			return
+		}
+
+		// Create a tasks slice with just this task
+		tasks := []*models.Task{task}
+
+		// Try to assign the task to a runner
+		if err := s.assignTasksToRunner(tasks, runners); err != nil {
+			log.Error().Err(err).Str("task_id", task.ID.String()).Msg("Failed to assign newly created task")
+		} else {
+			log.Info().Str("task_id", task.ID.String()).Msg("Successfully assigned newly created task")
+		}
+	}()
 
 	return nil
 }
@@ -192,21 +227,49 @@ func (s *TaskService) GetTasks(ctx context.Context) ([]models.Task, error) {
 }
 
 func (s *TaskService) StartTask(ctx context.Context, id string) error {
+	log := gologger.WithComponent("task_service")
+	log.Debug().Str("task_id", id).Msg("Attempting to start task")
+
 	taskUUID, err := uuid.Parse(id)
 	if err != nil {
+		log.Error().Err(err).Str("task_id", id).Msg("Invalid task ID format")
 		return fmt.Errorf("invalid task ID format: %w", err)
 	}
 
 	task, err := s.repo.Get(ctx, taskUUID)
 	if err != nil {
+		log.Error().Err(err).Str("task_id", id).Msg("Failed to get task")
 		return err
 	}
 
+	// Check if task is already running or completed
+	if task.Status == models.TaskStatusRunning {
+		log.Warn().Str("task_id", id).Msg("Task is already running")
+		return nil // Return success to avoid errors with already-running tasks
+	}
+
+	if task.Status == models.TaskStatusCompleted {
+		log.Warn().Str("task_id", id).Msg("Task is already completed")
+		return fmt.Errorf("task already completed")
+	}
+
+	// Only pending tasks can be started
+	if task.Status != models.TaskStatusPending {
+		log.Warn().
+			Str("task_id", id).
+			Str("current_status", string(task.Status)).
+			Msg("Cannot start task with current status")
+		return fmt.Errorf("cannot start task with status %s", task.Status)
+	}
+
+	// Update task status to running
 	task.Status = models.TaskStatusRunning
 	if err := s.repo.Update(ctx, task); err != nil {
+		log.Error().Err(err).Str("task_id", id).Msg("Failed to update task status")
 		return err
 	}
 
+	log.Info().Str("task_id", id).Msg("Task started successfully")
 	return nil
 }
 
@@ -356,33 +419,184 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 	var batchSize = 1
 	var availableRunners = len(runners)
 	var runner_iterator = 0
+	var assignedTasks = 0
 
-	for i := 0; i < len(tasks); i += 1 {
+	// Filter out busy runners
+	availableRunnerList := make([]*models.Runner, 0, len(runners))
+	for _, runner := range runners {
+		if runner.Status == models.RunnerStatusOnline {
+			availableRunnerList = append(availableRunnerList, runner)
+		}
+	}
+
+	if len(availableRunnerList) == 0 {
+		log.Warn().Msg("No available runners with online status")
+		return fmt.Errorf("no available runners")
+	}
+
+	availableRunners = len(availableRunnerList)
+	log.Info().Int("available_runners", availableRunners).Int("tasks", len(tasks)).Msg("Starting task assignment")
+
+	for i := 0; i < len(tasks) && runner_iterator < len(availableRunnerList); i++ {
 		if availableRunners-batchSize < 0 {
-			log.Error().
+			log.Warn().
 				Int("available_runners", availableRunners).
 				Int("batch_size", batchSize).
-				Msg("Not enough free runners for task")
+				Int("assigned_tasks", assignedTasks).
+				Msg("Not enough free runners for remaining tasks")
+			if assignedTasks > 0 {
+				// At least some tasks were assigned, so return success
+				return nil
+			}
 			return fmt.Errorf("not enough free runners for task")
 		}
 
 		availableRunners -= batchSize
 		var assignedRunners = 0
 
-		for runner_iterator < len(runners) && assignedRunners < batchSize {
-			runner := runners[runner_iterator]
-			err := s.AssignTaskToRunner(context.Background(), tasks[i].ID.String(), runner.DeviceID)
+		for runner_iterator < len(availableRunnerList) && assignedRunners < batchSize {
+			runner := availableRunnerList[runner_iterator]
+
+			// Double-check runner status before assignment
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			currentRunner, err := s.runnerService.GetRunner(ctx, runner.DeviceID)
+			cancel()
+
 			if err != nil {
-				log.Error().Err(err).Msg("Failed to assign task to runner")
-				return err
+				log.Error().Err(err).Str("runner_id", runner.DeviceID).Msg("Failed to get current runner status")
+				runner_iterator++
+				continue
 			}
-			runner_iterator += 1
+
+			// Skip if runner is no longer online
+			if currentRunner.Status != models.RunnerStatusOnline {
+				log.Info().
+					Str("runner_id", runner.DeviceID).
+					Str("status", string(currentRunner.Status)).
+					Msg("Skipping runner - not in online status")
+				runner_iterator++
+				continue
+			}
+
+			err = s.AssignTaskToRunner(context.Background(), tasks[i].ID.String(), runner.DeviceID)
+			if err != nil {
+				if err.Error() == "task unavailable" {
+					log.Info().
+						Str("task_id", tasks[i].ID.String()).
+						Msg("Task already assigned or completed, skipping")
+					break // Skip to next task
+				}
+
+				log.Error().Err(err).
+					Str("runner_id", runner.DeviceID).
+					Str("task_id", tasks[i].ID.String()).
+					Msg("Failed to assign task to runner")
+				runner_iterator++
+				continue
+			}
+
+			// Notify runner about the assigned task via webhook
+			if runner.Webhook != "" {
+				if err := s.notifyRunnerAboutTask(runner, tasks[i]); err != nil {
+					log.Error().
+						Err(err).
+						Str("runner_id", runner.DeviceID).
+						Str("task_id", tasks[i].ID.String()).
+						Msg("Failed to notify runner about task")
+					// Continue despite notification error - the runner will poll for tasks
+				} else {
+					log.Info().
+						Str("runner_id", runner.DeviceID).
+						Str("task_id", tasks[i].ID.String()).
+						Str("webhook", runner.Webhook).
+						Msg("Runner notified about task")
+				}
+			} else {
+				log.Warn().
+					Str("runner_id", runner.DeviceID).
+					Msg("Runner has no webhook URL registered")
+			}
+
+			runner_iterator++
 			log.Info().
 				Str("runner_id", runner.DeviceID).
-				Msg("Assigning task to runner")
-			assignedRunners += 1
+				Str("task_id", tasks[i].ID.String()).
+				Msg("Task assigned to runner")
+			assignedRunners++
+			assignedTasks++
 		}
 	}
+
+	if assignedTasks == 0 {
+		return fmt.Errorf("could not assign any tasks")
+	}
+
+	log.Info().Int("assigned_tasks", assignedTasks).Msg("Task assignment complete")
+	return nil
+}
+
+// notifyRunnerAboutTask sends a webhook notification to a runner about an assigned task
+func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.Task) error {
+	log := gologger.WithComponent("webhook_notify")
+
+	if runner.Webhook == "" {
+		return fmt.Errorf("runner has no webhook URL")
+	}
+
+	type WebhookMessage struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload"`
+	}
+
+	// Create a payload with just this task
+	tasks := []*models.Task{task}
+
+	// Marshal the tasks array to JSON
+	tasksJSON, err := json.Marshal(tasks)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tasks: %w", err)
+	}
+
+	// Create the webhook message
+	message := WebhookMessage{
+		Type:    "available_tasks",
+		Payload: tasksJSON,
+	}
+
+	// Marshal the full message
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal webhook message: %w", err)
+	}
+
+	// Send the webhook request
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	req, err := http.NewRequest("POST", runner.Webhook, bytes.NewBuffer(messageJSON))
+	if err != nil {
+		return fmt.Errorf("failed to create webhook request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send webhook request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("webhook request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Info().
+		Str("runner_id", runner.DeviceID).
+		Str("task_id", task.ID.String()).
+		Str("webhook", runner.Webhook).
+		Msg("Successfully notified runner about task")
 
 	return nil
 }

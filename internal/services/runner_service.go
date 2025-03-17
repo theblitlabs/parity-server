@@ -46,3 +46,23 @@ func (s *RunnerService) UpdateRunner(ctx context.Context, runner *models.Runner)
 func (s *RunnerService) ListRunnersByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error) {
 	return s.repo.ListByStatus(ctx, status)
 }
+
+// UpdateRunnerStatus updates a runner's status via heartbeat
+func (s *RunnerService) UpdateRunnerStatus(ctx context.Context, runner *models.Runner) (*models.Runner, error) {
+	// Get the existing runner
+	existingRunner, err := s.repo.Get(ctx, runner.DeviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update only the status, preserving other fields
+	existingRunner.Status = runner.Status
+
+	// If wallet address is provided, update it
+	if runner.WalletAddress != "" {
+		existingRunner.WalletAddress = runner.WalletAddress
+	}
+
+	// Update the runner in the database
+	return s.repo.Update(ctx, existingRunner)
+}
