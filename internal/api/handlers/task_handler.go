@@ -640,8 +640,40 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 	if info.Amount.Cmp(big.NewInt(0)) < 0 {
 		return fmt.Errorf("no stake found - please stake some PRTY first")
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-	return nil
+	doneCh := make(chan struct {
+		info walletsdk.StakeInfo
+		err  error
+	})
+
+	go func() {
+		info, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
+		doneCh <- struct {
+			info walletsdk.StakeInfo
+			err  error
+		}{info, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("stake check timed out: %v", ctx.Err())
+	case result := <-doneCh:
+		if result.err != nil {
+			return fmt.Errorf("failed to get stake info: %v", result.err)
+		}
+
+		if !result.info.Exists {
+			return fmt.Errorf("creator device not registered - please stake first")
+		}
+
+		if result.info.Amount.Cmp(big.NewInt(0)) < 0 {
+			return fmt.Errorf("no stake found - please stake some PRTY first")
+		}
+
+		return nil
+	}
 }
 
 func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
