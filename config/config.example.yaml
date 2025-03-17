@@ -15,3 +15,6 @@ ethereum:
 aws:
   region: us-west-2
   bucket_name: dev-parity-docker-images
+
+scheduler:
+  interval:

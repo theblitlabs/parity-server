@@ -46,7 +46,11 @@ func (r *Router) registerRoutes(router *mux.Router, taskHandler *handlers.TaskHa
 	runners.HandleFunc("/tasks/{id}/result", taskHandler.SaveTaskResult).Methods("POST")
 
 	runners.HandleFunc("/webhooks", taskHandler.RegisterWebhook).Methods("POST")
-	runners.HandleFunc("/webhooks/{id}", taskHandler.UnregisterWebhook).Methods("DELETE")
+	runners.HandleFunc("/webhooks/{device_id}", taskHandler.UnregisterWebhook).Methods("DELETE")
+
+	// Add new runner registration and heartbeat endpoints
+	runners.HandleFunc("", taskHandler.RegisterRunner).Methods("POST")
+	runners.HandleFunc("/heartbeat", taskHandler.RunnerHeartbeat).Methods("POST")
 }
 
 func (r *Router) AddMiddleware(middleware mux.MiddlewareFunc) {

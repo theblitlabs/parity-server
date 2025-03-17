@@ -12,20 +12,20 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/theblitlabs/gologger"
+	"github.com/theblitlabs/parity-server/internal/models"
 )
 
 type WebhookRegistration struct {
 	ID        string    `json:"id"`
 	URL       string    `json:"url"`
-	RunnerID  string    `json:"runner_id"`
 	DeviceID  string    `json:"device_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type RegisterWebhookRequest struct {
-	URL      string `json:"url"`
-	RunnerID string `json:"runner_id"`
-	DeviceID string `json:"device_id"`
+	URL           string `json:"url"`
+	DeviceID      string `json:"device_id"`
+	WalletAddress string `json:"wallet_address"`
 }
 
 type WSMessage struct {
@@ -33,15 +33,20 @@ type WSMessage struct {
 	Payload interface{} `json:"payload"`
 }
 
+// TaskServicer defines the interface for task-related operations needed by WebhookService
+type TaskServicer interface {
+	ListAvailableTasks(ctx context.Context) ([]*models.Task, error)
+}
+
 type WebhookService struct {
 	webhooks     map[string]WebhookRegistration
 	webhookMutex sync.RWMutex
-	taskService  TaskService
+	taskService  TaskServicer
 	stopCh       chan struct{}
 	taskUpdateCh chan struct{}
 }
 
-func NewWebhookService(taskService TaskService) *WebhookService {
+func NewWebhookService(taskService TaskServicer) *WebhookService {
 	return &WebhookService{
 		webhooks:     make(map[string]WebhookRegistration),
 		taskService:  taskService,
@@ -68,9 +73,6 @@ func (s *WebhookService) RegisterWebhook(req RegisterWebhookRequest) (string, er
 	if req.URL == "" {
 		return "", fmt.Errorf("webhook URL is required")
 	}
-	if req.RunnerID == "" {
-		return "", fmt.Errorf("runner ID is required")
-	}
 	if req.DeviceID == "" {
 		return "", fmt.Errorf("device ID is required")
 	}
@@ -79,7 +81,6 @@ func (s *WebhookService) RegisterWebhook(req RegisterWebhookRequest) (string, er
 	webhook := WebhookRegistration{
 		ID:        webhookID,
 		URL:       req.URL,
-		RunnerID:  req.RunnerID,
 		DeviceID:  req.DeviceID,
 		CreatedAt: time.Now(),
 	}
@@ -92,7 +93,6 @@ func (s *WebhookService) RegisterWebhook(req RegisterWebhookRequest) (string, er
 	log.Info().
 		Str("webhook_id", webhookID).
 		Str("url", req.URL).
-		Str("runner_id", req.RunnerID).
 		Str("device_id", req.DeviceID).
 		Time("created_at", webhook.CreatedAt).
 		Int("total_webhooks", len(s.webhooks)).
@@ -119,7 +119,6 @@ func (s *WebhookService) UnregisterWebhook(webhookID string) error {
 	log.Info().
 		Str("webhook_id", webhookID).
 		Str("url", webhook.URL).
-		Str("runner_id", webhook.RunnerID).
 		Str("device_id", webhook.DeviceID).
 		Time("created_at", webhook.CreatedAt).
 		Time("unregistered_at", time.Now()).

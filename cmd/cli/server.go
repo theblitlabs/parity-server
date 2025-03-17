@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -22,7 +25,10 @@ import (
 	"github.com/theblitlabs/parity-server/internal/config"
 	"github.com/theblitlabs/parity-server/internal/database"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
+	"github.com/theblitlabs/parity-server/internal/models"
 	"github.com/theblitlabs/parity-server/internal/services"
+
+	"github.com/google/uuid"
 )
 
 func verifyPortAvailable(host string, port string) error {
@@ -64,26 +70,57 @@ func RunServer() {
 	defer shutdownCancel()
 
 	taskRepo := repositories.NewTaskRepository(db)
+	runnerRepo := repositories.NewRunnerRepository(db)
+
 	rewardCalculator := services.NewRewardCalculator()
 
 	rewardClient := services.NewEthereumRewardClient(cfg)
 
-	taskService := services.NewTaskService(taskRepo, rewardCalculator.(*services.RewardCalculator))
+	runnerService := services.NewRunnerService(runnerRepo)
+	taskService := services.NewTaskService(taskRepo, rewardCalculator.(*services.RewardCalculator), runnerService)
 	taskService.SetRewardClient(rewardClient)
+	runnerService.SetTaskService(taskService)
 
-	webhookService := services.NewWebhookService(*taskService)
+	heartbeatTimeoutMinutes := cfg.Scheduler.Interval
+	if heartbeatTimeoutMinutes <= 0 {
+		heartbeatTimeoutMinutes = 5
+		log.Warn().
+			Int("default_timeout_minutes", heartbeatTimeoutMinutes).
+			Msg("Heartbeat timeout not specified in config, using default")
+	}
+
+	heartbeatService := services.NewHeartbeatService(runnerService)
+	heartbeatService.SetHeartbeatTimeout(time.Duration(heartbeatTimeoutMinutes) * time.Minute)
+	heartbeatService.SetCheckInterval(1 * time.Minute)
+
+	webhookService := services.NewWebhookService(taskService)
 	s3Service, err := services.NewS3Service(cfg.AWS.BucketName)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to initialize S3 service")
 		return
 	}
-	taskHandler := handlers.NewTaskHandler(taskService, webhookService, s3Service)
+	taskHandler := handlers.NewTaskHandler(taskService, webhookService, runnerService, s3Service)
+
+	if err := heartbeatService.Start(); err != nil {
+		log.Error().Err(err).Msg("Failed to start heartbeat monitoring service")
+	}
+
+	monitorCtx, monitorCancel := context.WithCancel(context.Background())
+	defer monitorCancel()
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-monitorCtx.Done():
+				return
+			case <-ticker.C:
+				taskService.MonitorTasks()
+			}
+		}
+	}()
 
 	internalStopCh := make(chan struct{})
-	go func() {
-		<-shutdownCtx.Done()
-		close(internalStopCh)
-	}()
 	taskHandler.SetStopChannel(internalStopCh)
 
 	homeDir, err := os.UserHomeDir()
@@ -104,7 +141,6 @@ func RunServer() {
 		log.Fatal().Err(err).Msg("Failed to get private key - please authenticate first")
 	}
 
-	// Create wallet client
 	walletClient, err := walletsdk.NewClient(walletsdk.ClientConfig{
 		RPCURL:       cfg.Ethereum.RPC,
 		ChainID:      cfg.Ethereum.ChainID,
@@ -145,68 +181,161 @@ func RunServer() {
 		Handler: router,
 	}
 
+	log.Info().
+		Str("address", fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)).
+		Msg("Server starting")
+
 	go func() {
 		<-stopChan
+		log.Info().Msg("Shutdown signal received, gracefully shutting down...")
+
+		close(internalStopCh)
+		monitorCancel()
+
+		heartbeatService.Stop()
+		log.Info().Msg("Stopped heartbeat monitoring service")
+
+		if runnerService != nil {
+			if err := runnerService.StopTaskMonitor(); err != nil {
+				log.Warn().Err(err).Msg("Error stopping task monitor")
+			} else {
+				log.Info().Msg("Stopped task monitor")
+			}
+		}
+
+		serverShutdownCtx, serverShutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer serverShutdownCancel()
+
 		log.Info().
-			Msg("Shutdown signal received, gracefully shutting down...")
+			Int("shutdown_timeout_seconds", 15).
+			Msg("Initiating server shutdown sequence")
+
+		shutdownStart := time.Now()
+		if err := server.Shutdown(serverShutdownCtx); err != nil {
+			log.Error().
+				Err(err).
+				Msg("Server shutdown error")
+			if err == context.DeadlineExceeded {
+				log.Warn().
+					Msg("Server shutdown deadline exceeded, forcing immediate shutdown")
+			}
+		} else {
+			shutdownDuration := time.Since(shutdownStart)
+			log.Info().
+				Dur("duration_ms", shutdownDuration).
+				Msg("Server HTTP connections gracefully closed")
+		}
+
+		log.Info().Msg("Starting webhook resource cleanup...")
+		cleanupStart := time.Now()
+		taskHandler.CleanupResources()
+		log.Info().
+			Dur("duration_ms", time.Since(cleanupStart)).
+			Msg("Webhook resources cleanup completed")
+
+		dbCloseStart := time.Now()
+		sqlDB, err := db.DB()
+		if err != nil {
+			log.Error().Err(err).Msg("Error getting underlying *sql.DB instance")
+		} else {
+			if err := sqlDB.Close(); err != nil {
+				log.Error().Err(err).Msg("Error closing database connection")
+			} else {
+				log.Info().
+					Dur("duration_ms", time.Since(dbCloseStart)).
+					Msg("Database connection closed successfully")
+			}
+		}
+
+		log.Info().Msg("Shutdown complete")
 		shutdownCancel()
 	}()
 
-	go func() {
-		log.Info().
-			Str("address", fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)).
-			Msg("Server starting")
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("Server failed to start")
-		}
-	}()
-
-	<-shutdownCtx.Done()
-
-	serverShutdownCtx, serverShutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer serverShutdownCancel()
-
-	log.Info().
-		Int("shutdown_timeout_seconds", 15).
-		Msg("Initiating server shutdown sequence")
-
-	shutdownStart := time.Now()
-	if err := server.Shutdown(serverShutdownCtx); err != nil {
-		log.Error().
-			Err(err).
-			Msg("Server shutdown error")
-		if err == context.DeadlineExceeded {
-			log.Warn().
-				Msg("Server shutdown deadline exceeded, forcing immediate shutdown")
-		}
-	} else {
-		shutdownDuration := time.Since(shutdownStart)
-		log.Info().
-			Dur("duration_ms", shutdownDuration).
-			Msg("Server HTTP connections gracefully closed")
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal().Err(err).Msg("Server failed to start")
 	}
 
-	log.Info().Msg("Starting webhook resource cleanup...")
-	cleanupStart := time.Now()
-	taskHandler.CleanupResources()
-	log.Info().
-		Dur("duration_ms", time.Since(cleanupStart)).
-		Msg("Webhook resources cleanup completed")
+	<-shutdownCtx.Done()
+}
 
-	dbCloseStart := time.Now()
+func pushTaskToRunner(taskID string, runnerID string, cfg *config.Config) error {
+	log := gologger.WithComponent("task_push")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	db, err := database.Connect(ctx, cfg.Database.URL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		log.Error().Err(err).Msg("Error getting underlying *sql.DB instance")
-	} else {
-		if err := sqlDB.Close(); err != nil {
-			log.Error().Err(err).Msg("Error closing database connection")
-		} else {
-			log.Info().
-				Dur("duration_ms", time.Since(dbCloseStart)).
-				Msg("Database connection closed successfully")
-		}
+		return fmt.Errorf("error getting *sql.DB: %w", err)
+	}
+	defer sqlDB.Close()
+
+	taskRepo := repositories.NewTaskRepository(db)
+	runnerRepo := repositories.NewRunnerRepository(db)
+	runnerService := services.NewRunnerService(runnerRepo)
+
+	taskUUID, err := uuid.Parse(taskID)
+	if err != nil {
+		return fmt.Errorf("invalid task ID: %w", err)
 	}
 
-	log.Info().Msg("Shutdown complete")
+	task, err := taskRepo.Get(ctx, taskUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get task: %w", err)
+	}
+
+	runner, err := runnerService.GetRunner(ctx, runnerID)
+	if err != nil {
+		return fmt.Errorf("failed to get runner: %w", err)
+	}
+
+	if runner.Webhook == "" {
+		return fmt.Errorf("runner has no webhook URL")
+	}
+
+	type WebhookMessage struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload"`
+	}
+
+	tasks := []*models.Task{task}
+	tasksJSON, err := json.Marshal(tasks)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tasks: %w", err)
+	}
+
+	message := WebhookMessage{
+		Type:    "available_tasks",
+		Payload: tasksJSON,
+	}
+
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(runner.Webhook, "application/json", bytes.NewBuffer(messageJSON))
+	if err != nil {
+		return fmt.Errorf("failed to send webhook: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("webhook failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Info().
+		Str("task_id", taskID).
+		Str("runner_id", runnerID).
+		Str("webhook", runner.Webhook).
+		Msg("Successfully pushed task to runner")
+
+	return nil
 }
