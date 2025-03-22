@@ -1,6 +1,8 @@
 package config
 
 import (
+	"sync"
+
 	"github.com/spf13/viper"
 )
 
@@ -38,7 +40,64 @@ type SchedulerConfig struct {
 	Interval int `mapstructure:"interval"`
 }
 
-func LoadConfig(path string) (*Config, error) {
+type ConfigManager struct {
+	config     *Config
+	configPath string
+	mutex      sync.RWMutex
+}
+
+var (
+	instance *ConfigManager
+	once     sync.Once
+)
+
+func GetConfigManager() *ConfigManager {
+	once.Do(func() {
+		instance = &ConfigManager{
+			configPath: "config/config.yaml", // Default path
+		}
+	})
+	return instance
+}
+
+func (cm *ConfigManager) SetConfigPath(path string) {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+	cm.configPath = path
+	cm.config = nil 
+}
+
+func (cm *ConfigManager) GetConfig() (*Config, error) {
+	cm.mutex.RLock()
+	if cm.config != nil {
+		defer cm.mutex.RUnlock()
+		return cm.config, nil
+	}
+	cm.mutex.RUnlock()
+
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+
+	if cm.config != nil {
+		return cm.config, nil
+	}
+
+	// Load config
+	var err error
+	cm.config, err = loadConfigFile(cm.configPath)
+	return cm.config, err
+}
+
+func (cm *ConfigManager) ReloadConfig() (*Config, error) {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+
+	var err error
+	cm.config, err = loadConfigFile(cm.configPath)
+	return cm.config, err
+}
+
+func loadConfigFile(path string) (*Config, error) {
 	viper.SetConfigFile(path)
 	viper.AutomaticEnv()
 
@@ -52,4 +111,10 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+func (cm *ConfigManager) GetConfigPath() string {
+	cm.mutex.RLock()
+	defer cm.mutex.RUnlock()
+	return cm.configPath
 }

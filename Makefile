@@ -43,7 +43,7 @@ setup-coverage: ## Create coverage directory
 	@mkdir -p $(COVERAGE_DIR)
 
 run:  ## Run the application
-	$(GOCMD) run $(MAIN_PATH) 
+	$(GOCMD) run $(MAIN_PATH) $(ARGS)
 
 server:  ## Start the parity server
 	$(GOCMD) run $(MAIN_PATH) server

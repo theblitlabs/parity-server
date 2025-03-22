@@ -48,7 +48,7 @@ func verifyPortAvailable(host string, port string) error {
 func RunServer() {
 	log := gologger.Get()
 
-	cfg, err := config.LoadConfig("config/config.yaml")
+	cfg, err := config.GetConfigManager().GetConfig()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to load config")
 	}

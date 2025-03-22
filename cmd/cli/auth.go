@@ -43,7 +43,8 @@ func RunAuth() {
 				return fmt.Errorf("failed to get private key flag: %w", err)
 			}
 
-			return ExecuteAuth(privateKey, "config/config.yaml")
+			// Use the config from ConfigManager
+			return ExecuteAuth(privateKey, config.GetConfigManager().GetConfigPath())
 		},
 	}, logger)
 
@@ -57,7 +58,10 @@ func ExecuteAuth(privateKey string, configPath string) error {
 		return fmt.Errorf("private key is required")
 	}
 
-	cfg, err := config.LoadConfig(configPath)
+	// Set the config path and get the config
+	configManager := config.GetConfigManager()
+	configManager.SetConfigPath(configPath)
+	cfg, err := configManager.GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
