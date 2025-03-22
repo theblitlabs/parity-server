@@ -13,6 +13,7 @@ import (
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/config"
+	"github.com/theblitlabs/parity-server/internal/utils"
 )
 
 const (
@@ -22,25 +23,31 @@ const (
 
 func RunAuth() {
 	var privateKey string
+	logger := log.With().Str("component", "auth").Logger()
 
-	cmd := &cobra.Command{
+	cmd := utils.CreateCommand(utils.CommandConfig{
 		Use:   "auth",
 		Short: "Authenticate with the network",
-		Run: func(cmd *cobra.Command, args []string) {
-			if err := ExecuteAuth(privateKey, "config/config.yaml"); err != nil {
-				log.Fatal().Err(err).Msg("Failed to authenticate")
-			}
+		Flags: map[string]utils.Flag{
+			"private-key": {
+				Type:        utils.FlagTypeString,
+				Shorthand:   "k",
+				Description: "Private key in hex format",
+				Required:    true,
+			},
 		},
-	}
+		RunFunc: func(cmd *cobra.Command, args []string) error {
+			var err error
+			privateKey, err = cmd.Flags().GetString("private-key")
+			if err != nil {
+				return fmt.Errorf("failed to get private key flag: %w", err)
+			}
 
-	cmd.Flags().StringVarP(&privateKey, "private-key", "k", "", "Private key in hex format")
-	if err := cmd.MarkFlagRequired("private-key"); err != nil {
-		log.Fatal().Err(err).Msg("Failed to mark flag as required")
-	}
+			return ExecuteAuth(privateKey, "config/config.yaml")
+		},
+	}, logger)
 
-	if err := cmd.Execute(); err != nil {
-		log.Fatal().Err(err).Msg("Failed to execute auth command")
-	}
+	utils.ExecuteCommand(cmd, logger)
 }
 
 func ExecuteAuth(privateKey string, configPath string) error {
