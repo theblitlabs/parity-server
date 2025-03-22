@@ -13,7 +13,7 @@ import (
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/config"
-	"github.com/theblitlabs/parity-server/internal/models"
+	"github.com/theblitlabs/parity-server/internal/core/models"
 )
 
 type RewardClient interface {

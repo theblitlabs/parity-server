@@ -25,7 +25,7 @@ import (
 	"github.com/theblitlabs/parity-server/internal/config"
 	"github.com/theblitlabs/parity-server/internal/database"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
-	"github.com/theblitlabs/parity-server/internal/models"
+	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/services"
 
 	"github.com/google/uuid"

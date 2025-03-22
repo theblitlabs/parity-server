@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/theblitlabs/parity-server/internal/models"
+	"github.com/theblitlabs/parity-server/internal/core/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )

@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/theblitlabs/gologger"
-	"github.com/theblitlabs/parity-server/internal/models"
+	"github.com/theblitlabs/parity-server/internal/core/models"
 	"gorm.io/gorm"
 )
 

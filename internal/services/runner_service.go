@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/theblitlabs/gologger"
-	"github.com/theblitlabs/parity-server/internal/models"
+	"github.com/theblitlabs/parity-server/internal/core/models"
 )
 
 var (
