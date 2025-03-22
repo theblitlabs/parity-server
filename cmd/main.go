@@ -9,7 +9,7 @@ import (
 
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/cmd/cli"
-	"github.com/theblitlabs/parity-server/internal/config"
+	"github.com/theblitlabs/parity-server/internal/core/config"
 )
 
 var logMode string

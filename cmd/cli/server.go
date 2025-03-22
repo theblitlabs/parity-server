@@ -22,10 +22,10 @@ import (
 	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/api"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
-	"github.com/theblitlabs/parity-server/internal/config"
+	"github.com/theblitlabs/parity-server/internal/core/config"
+	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/database"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
-	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/services"
 
 	"github.com/google/uuid"

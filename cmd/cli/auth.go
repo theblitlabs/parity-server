@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/keystore"
-	"github.com/theblitlabs/parity-server/internal/config"
+	"github.com/theblitlabs/parity-server/internal/core/config"
 	"github.com/theblitlabs/parity-server/internal/utils"
 )
 

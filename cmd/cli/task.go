@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"github.com/theblitlabs/parity-server/internal/config"
+	"github.com/theblitlabs/parity-server/internal/core/config"
 )
 
 // PushTaskToRunner provides access to the pushTaskToRunner function
