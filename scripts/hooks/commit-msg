@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# This script validates that the commit message follows the Conventional Commits specification
+# https://www.conventionalcommits.org/
+
+commit_msg_file=$1
+commit_msg=$(cat "$commit_msg_file")
+
+# Define valid commit types based on conventional commits
+valid_types="feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert"
+
+# The regex pattern for conventional commits
+# <type>[optional scope]: <description>
+conventional_pattern="^($valid_types)(\([a-z0-9-]+\))?: .+"
+
+# Check if this is a merge commit
+merge_pattern="^Merge "
+if echo "$commit_msg" | grep -qE "$merge_pattern"; then
+    echo "Merge commit detected, skipping conventional commit validation."
+    exit 0
+fi
+
+if ! echo "$commit_msg" | grep -qE "$conventional_pattern"; then
+    echo "ERROR: Commit message does not follow Conventional Commits format."
+    echo "Required format: <type>[optional scope]: <description>"
+    echo "  where <type> is one of: feat, fix, chore, docs, style, refactor, perf, test, build, ci, revert"
+    echo "Examples:"
+    echo "  feat: add new feature"
+    echo "  fix(auth): resolve login issue"
+    echo "  docs: update README"
+    exit 1
+fi
+
+# Additionally check that the first line is not too long (recommended: ≤ 72 chars)
+first_line=$(echo "$commit_msg" | head -1)
+if [ ${#first_line} -gt 72 ]; then
+    echo "WARNING: First line of commit message is too long (${#first_line} > 72 chars)"
+    echo "Consider making it shorter for better readability"
+fi
+
+exit 0 
