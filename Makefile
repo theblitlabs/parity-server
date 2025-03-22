@@ -26,7 +26,7 @@ BUILD_FLAGS=-v
 # Add these lines after the existing parameters
 INSTALL_PATH=/usr/local/bin
 
-.PHONY: all build test run clean deps fmt help docker-up docker-down docker-logs docker-build docker-clean install-air watch tools install uninstall install-lint-tools lint
+.PHONY: all build test run clean deps fmt help docker-up docker-down docker-logs docker-build docker-clean install-air watch tools install uninstall install-lint-tools lint install-hooks
 
 all: clean build
 
@@ -104,5 +104,9 @@ lint: ## Run linting
 
 install-lint-tools: ## Install linting tools
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+install-hooks: ## Install git hooks
+	@echo "Installing git hooks..."
+	@./scripts/hooks/install-hooks.sh
 
 .DEFAULT_GOAL := help

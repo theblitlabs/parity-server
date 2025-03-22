@@ -1,0 +1,85 @@
+#!/bin/bash
+
+# Pre-commit hook for Parity Runner
+# This script runs various checks before allowing a commit to proceed
+
+# Don't exit on errors automatically
+set +e
+
+echo "Running pre-commit checks..."
+
+# Save the current directory
+ROOT_DIR=$(git rev-parse --show-toplevel)
+cd "$ROOT_DIR"
+
+# Get list of staged files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -z "$STAGED_FILES" ]; then
+  echo "No staged files found, skipping pre-commit checks."
+  exit 0
+fi
+
+# Format checks
+echo "🔍 Checking code formatting..."
+make check-format
+
+# Run format if gofumpt is available
+if command -v gofumpt >/dev/null 2>&1; then
+  echo "Automatically formatting code with gofumpt..."
+  gofumpt -l -w .
+fi
+
+# Run goimports if available
+if command -v goimports >/dev/null 2>&1; then
+  echo "Automatically organizing imports with goimports..."
+  goimports -w -local github.com/theblitlabs/parity-runner .
+fi
+
+# Security checks
+echo "🔒 Running security checks..."
+
+# Check for sensitive files in staged files only
+echo "Checking for sensitive files in staged files..."
+sensitive_patterns=('.env' '*.pem' '*.key' '*_rsa' '*_dsa' '*.p12' '*.pfx')
+sensitive_found=false
+
+# Only check files that are actually being committed (respects .gitignore)
+for file in $STAGED_FILES; do
+  for pattern in "${sensitive_patterns[@]}"; do
+    if [[ "$file" == *$pattern* ]]; then
+      echo "Error: Potentially sensitive file found: $file"
+      sensitive_found=true
+    fi
+  done
+done
+
+if [ "$sensitive_found" = true ]; then
+  echo "❌ Security check failed: sensitive files found"
+  exit 1
+fi
+
+# Verify dependencies (but continue even if they fail)
+echo "🔍 Verifying dependencies..."
+go mod verify || echo "⚠️ Module verification issues found, but continuing..."
+
+# Check for tidiness (but continue even if they fail)
+echo "Checking for tidiness..."
+# Save the current state
+cp go.mod go.mod.bak
+cp go.sum go.sum.bak
+
+# Run tidy and check for differences
+go mod tidy
+diff_mod=$(diff go.mod go.mod.bak 2>/dev/null || true)
+diff_sum=$(diff go.sum go.sum.bak 2>/dev/null || true)
+
+# Restore the original files
+mv go.mod.bak go.mod
+mv go.sum.bak go.sum
+
+if [ -n "$diff_mod" ] || [ -n "$diff_sum" ]; then
+  echo "⚠️ Warning: go.mod or go.sum not tidy. You should run 'go mod tidy'."
+fi
+
+echo "✅ Pre-commit checks completed!"
+exit 0 
