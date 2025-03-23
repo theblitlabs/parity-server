@@ -13,8 +13,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/theblitlabs/gologger"
-	"github.com/theblitlabs/parity-server/internal/database/repositories"
 	"github.com/theblitlabs/parity-server/internal/core/models"
+	"github.com/theblitlabs/parity-server/internal/core/ports"
+	"github.com/theblitlabs/parity-server/internal/database/repositories"
 )
 
 var (
@@ -33,20 +34,18 @@ type TaskRepository interface {
 	GetTaskResult(ctx context.Context, taskID uuid.UUID) (*models.TaskResult, error)
 }
 
-type RewardCalculatorService interface {
-	CalculateReward(resourceMetrics ResourceMetrics) float64
-}
+// RewardCalculatorService interface is now defined in ports.RewardCalculator
 
 type TaskService struct {
 	repo                   TaskRepository
-	rewardCalculator       *RewardCalculator
-	rewardClient           RewardClient
+	rewardCalculator       ports.RewardCalculator
+	rewardClient           ports.RewardClient
 	nonceService           *NonceService
 	runnerService          *RunnerService
 	notificationInProgress sync.Map // Used to track in-progress notifications
 }
 
-func NewTaskService(repo TaskRepository, rewardCalculator *RewardCalculator, runnerService *RunnerService) *TaskService {
+func NewTaskService(repo TaskRepository, rewardCalculator ports.RewardCalculator, runnerService *RunnerService) *TaskService {
 	return &TaskService{
 		repo:             repo,
 		rewardCalculator: rewardCalculator,
@@ -55,7 +54,7 @@ func NewTaskService(repo TaskRepository, rewardCalculator *RewardCalculator, run
 	}
 }
 
-func (s *TaskService) SetRewardClient(client RewardClient) {
+func (s *TaskService) SetRewardClient(client ports.RewardClient) {
 	s.rewardClient = client
 }
 
@@ -392,7 +391,7 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		Msg("Task result verification passed")
 
 	if result.ExitCode == 0 {
-		metrics := ResourceMetrics{
+		metrics := ports.ResourceMetrics{
 			CPUSeconds:      result.CPUSeconds,
 			EstimatedCycles: result.EstimatedCycles,
 			MemoryGBHours:   result.MemoryGBHours,

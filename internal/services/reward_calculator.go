@@ -1,13 +1,10 @@
 package services
 
-type ResourceMetrics struct {
-	CPUSeconds      float64
-	EstimatedCycles uint64
-	MemoryGBHours   float64
-	StorageGB       float64
-	NetworkDataGB   float64
-}
+import (
+	"github.com/theblitlabs/parity-server/internal/core/ports"
+)
 
+// RewardCalculator implements the ports.RewardCalculator interface
 type RewardCalculator struct {
 	cpuCostPerSecond     float64
 	memoryCostPerGBHour  float64
@@ -16,7 +13,8 @@ type RewardCalculator struct {
 	cyclesCostPerMillion float64
 }
 
-func NewRewardCalculator() RewardCalculatorService {
+// NewRewardCalculator creates a new reward calculator with default cost rates
+func NewRewardCalculator() ports.RewardCalculator {
 	return &RewardCalculator{
 		cpuCostPerSecond:     0.00001,  // $0.00001 per CPU second
 		memoryCostPerGBHour:  0.00005,  // $0.00005 per GB-hour
@@ -26,10 +24,8 @@ func NewRewardCalculator() RewardCalculatorService {
 	}
 }
 
-// AWS 0.0000100000188 GB-Hours
-// GCP 0.00002361111111 GB-Hours
-
-func (rc *RewardCalculator) CalculateReward(metrics ResourceMetrics) float64 {
+// CalculateReward calculates the cost of resources used and returns a reward value
+func (rc *RewardCalculator) CalculateReward(metrics ports.ResourceMetrics) float64 {
 	cpuCost := metrics.CPUSeconds * rc.cpuCostPerSecond
 	memoryCost := metrics.MemoryGBHours * rc.memoryCostPerGBHour
 	storageCost := metrics.StorageGB * rc.storageCostPerGB
@@ -39,9 +35,10 @@ func (rc *RewardCalculator) CalculateReward(metrics ResourceMetrics) float64 {
 	// Sum all costs and add a 20% margin
 	totalCost := (cpuCost + memoryCost + storageCost + networkCost + cyclesCost) * 1.2
 
+	// Set a minimum reward amount
 	if totalCost < 0.0001 {
 		totalCost = 0.0001
 	}
 
 	return totalCost
-}
+} 

@@ -14,22 +14,16 @@ import (
 	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/core/config"
 	"github.com/theblitlabs/parity-server/internal/core/models"
+	"github.com/theblitlabs/parity-server/internal/core/ports"
 )
 
-type RewardClient interface {
-	DistributeRewards(result *models.TaskResult) error
-}
-
-type StakeWallet interface {
-	GetStakeInfo(deviceID string) (walletsdk.StakeInfo, error)
-	TransferPayment(creator string, runner string, amount *big.Int) error
-}
-
+// EthereumRewardClient implements the ports.RewardClient interface
 type EthereumRewardClient struct {
 	cfg         *config.Config
-	stakeWallet StakeWallet
+	stakeWallet ports.StakeWallet
 }
 
+// NewEthereumRewardClient creates a new client for distributing rewards via Ethereum
 func NewEthereumRewardClient(cfg *config.Config) *EthereumRewardClient {
 	return &EthereumRewardClient{
 		cfg: cfg,
@@ -37,10 +31,11 @@ func NewEthereumRewardClient(cfg *config.Config) *EthereumRewardClient {
 }
 
 // SetStakeWallet sets the stake wallet for testing
-func (c *EthereumRewardClient) SetStakeWallet(sw StakeWallet) {
+func (c *EthereumRewardClient) SetStakeWallet(sw ports.StakeWallet) {
 	c.stakeWallet = sw
 }
 
+// DistributeRewards sends the reward amount to the task runner
 func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) error {
 	log := gologger.WithComponent("rewards").With().
 		Str("task", result.TaskID.String()).
@@ -166,6 +161,7 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 	return nil
 }
 
+// distributeWithMockWallet handles reward distribution using a mock wallet for testing
 func (c *EthereumRewardClient) distributeWithMockWallet(log zerolog.Logger, result *models.TaskResult) error {
 	stakeInfo, err := c.stakeWallet.GetStakeInfo(result.DeviceID)
 	if err != nil {
@@ -193,4 +189,4 @@ func (c *EthereumRewardClient) distributeWithMockWallet(log zerolog.Logger, resu
 
 	log.Info().Str("reward", rewardAmount.String()).Msg("Transfer completed")
 	return nil
-}
+} 
