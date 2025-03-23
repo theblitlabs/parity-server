@@ -14,28 +14,22 @@ import (
 	"github.com/theblitlabs/parity-server/internal/core/config"
 )
 
-// RunServer starts the parity server
 func RunServer() {
 	log := gologger.Get()
 
-	// Load application configuration
 	cfg, err := config.GetConfigManager().GetConfig()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
 	}
 
-	// Create cancellable context for graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 	defer shutdownCancel()
 
-	// Create channel to receive OS signals
 	stopChan := make(chan os.Signal, 1)
 	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 
-	// Create the server builder which handles all initialization
 	serverBuilder := app.NewServerBuilder(cfg)
 
-	// Initialize the services, repositories and other components
 	server, err := serverBuilder.
 		InitDatabase().
 		InitRepositories().
@@ -50,7 +44,6 @@ func RunServer() {
 		log.Fatal().Err(err).Msg("Failed to initialize server")
 	}
 
-	// Start the server in a separate goroutine
 	go func() {
 		serverAddr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
 		log.Info().Str("address", serverAddr).Msg("Server starting")
@@ -60,7 +53,6 @@ func RunServer() {
 		}
 	}()
 
-	// Wait for shutdown signal
 	<-stopChan
 	log.Info().Msg("Shutdown signal received, gracefully shutting down...")
 
@@ -69,23 +61,18 @@ func RunServer() {
 
 	signal.Stop(stopChan)
 
-	// Setup additional signal handler for force shutdown during graceful shutdown
 	forceStopChan := make(chan os.Signal, 1)
 	signal.Notify(forceStopChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 
-	// Force shutdown if additional signals are received during graceful shutdown
 	go func() {
 		<-forceStopChan
 		log.Warn().Msg("Forced shutdown requested, terminating immediately")
 		os.Exit(1)
 	}()
 
-	// Trigger graceful shutdown with timeout
 	server.Shutdown(shutdownTimeoutCtx)
 
-	// Normal shutdown completed
 	log.Info().Msg("Shutdown completed successfully, exiting")
 
-	// Exit with success code
 	os.Exit(0)
 }

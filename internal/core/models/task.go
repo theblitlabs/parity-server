@@ -55,7 +55,6 @@ func (c *TaskConfig) Validate(taskType TaskType) error {
 		if c.ImageName == "" {
 			return errors.New("image name is required for Docker tasks")
 		}
-		// For Docker tasks with uploaded images, ensure we have a URL
 		if c.DockerImageURL == "" && c.FileURL == "" {
 			return errors.New("either docker image URL or file URL is required for Docker tasks")
 		}
@@ -86,7 +85,6 @@ type Task struct {
 	CompletedAt     *time.Time         `json:"completed_at" gorm:"type:timestamp"`
 }
 
-// NewTask creates a new Task with a generated UUID and nonce
 func NewTask() *Task {
 	t := &Task{
 		ID:        uuid.New(),
@@ -97,7 +95,6 @@ func NewTask() *Task {
 	return t
 }
 
-// Validate performs basic validation on the task
 func (t *Task) Validate() error {
 	if t.Title == "" {
 		return errors.New("title is required")

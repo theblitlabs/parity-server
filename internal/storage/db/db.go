@@ -16,12 +16,10 @@ type DBManager struct {
 	lock sync.RWMutex
 }
 
-// NewDBManager creates a new DBManager instance
 func NewDBManager() *DBManager {
 	return &DBManager{}
 }
 
-// Connect establishes a database connection
 func (m *DBManager) Connect(ctx context.Context, dbURL string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
@@ -50,14 +48,12 @@ func (m *DBManager) Connect(ctx context.Context, dbURL string) error {
 	return nil
 }
 
-// GetDB returns the database connection
 func (m *DBManager) GetDB() *gorm.DB {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 	return m.db
 }
 
-// Close closes the database connection
 func (m *DBManager) Close() error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
@@ -74,13 +70,11 @@ func (m *DBManager) Close() error {
 	return sqlDB.Close()
 }
 
-// Global instance for singleton access pattern
 var (
 	instance *DBManager
 	once     sync.Once
 )
 
-// GetDBManager returns the singleton database manager instance
 func GetDBManager() *DBManager {
 	once.Do(func() {
 		instance = NewDBManager()
@@ -88,7 +82,6 @@ func GetDBManager() *DBManager {
 	return instance
 }
 
-// Connect is a helper function that connects the global DB instance
 func Connect(ctx context.Context, dbURL string) (*gorm.DB, error) {
 	dbManager := GetDBManager()
 	err := dbManager.Connect(ctx, dbURL)

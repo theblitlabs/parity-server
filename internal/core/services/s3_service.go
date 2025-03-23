@@ -36,11 +36,9 @@ func NewS3Service(bucketName string) (*S3Service, error) {
 func (s *S3Service) UploadDockerImage(ctx context.Context, imageData []byte, imageName string) (string, error) {
 	log := gologger.Get()
 
-	// Generate a unique filename
 	filename := fmt.Sprintf("%s-%s%s", imageName, uuid.New().String(), ".tar")
 	key := path.Join("docker-images", filename)
 
-	// Upload the file to S3
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(s.bucketName),
 		Key:           aws.String(key),
@@ -58,7 +56,6 @@ func (s *S3Service) UploadDockerImage(ctx context.Context, imageData []byte, ima
 		return "", fmt.Errorf("failed to upload Docker image: %w", err)
 	}
 
-	// Generate a pre-signed URL for the object
 	presignClient := s3.NewPresignClient(s.client)
 	presignedURL, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucketName),
@@ -83,8 +80,6 @@ func (s *S3Service) UploadDockerImage(ctx context.Context, imageData []byte, ima
 }
 
 func (s *S3Service) DeleteDockerImage(ctx context.Context, imageURL string) error {
-	// Extract the key from the URL
-	// Note: This is a simplified example. You might need more robust URL parsing
 	key := path.Base(imageURL)
 	key = path.Join("docker-images", key)
 
@@ -98,4 +93,4 @@ func (s *S3Service) DeleteDockerImage(ctx context.Context, imageURL string) erro
 	}
 
 	return nil
-} 
+}

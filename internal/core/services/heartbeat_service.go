@@ -118,4 +118,4 @@ func (s *HeartbeatService) IsRunning() bool {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	return s.isRunning
-} 
+}

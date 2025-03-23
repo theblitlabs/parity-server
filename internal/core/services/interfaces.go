@@ -17,4 +17,4 @@ type ITaskService interface {
 	CompleteTask(ctx context.Context, id string) error
 	GetTaskResult(ctx context.Context, id string) (*models.TaskResult, error)
 	SaveTaskResult(ctx context.Context, result *models.TaskResult) error
-} 
+}

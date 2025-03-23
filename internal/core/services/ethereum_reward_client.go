@@ -17,25 +17,21 @@ import (
 	"github.com/theblitlabs/parity-server/internal/core/ports"
 )
 
-// EthereumRewardClient implements the ports.RewardClient interface
 type EthereumRewardClient struct {
 	cfg         *config.Config
 	stakeWallet ports.StakeWallet
 }
 
-// NewEthereumRewardClient creates a new client for distributing rewards via Ethereum
 func NewEthereumRewardClient(cfg *config.Config) *EthereumRewardClient {
 	return &EthereumRewardClient{
 		cfg: cfg,
 	}
 }
 
-// SetStakeWallet sets the stake wallet for testing
 func (c *EthereumRewardClient) SetStakeWallet(sw ports.StakeWallet) {
 	c.stakeWallet = sw
 }
 
-// DistributeRewards sends the reward amount to the task runner
 func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) error {
 	log := gologger.WithComponent("rewards").With().
 		Str("task", result.TaskID.String()).
@@ -189,4 +185,4 @@ func (c *EthereumRewardClient) distributeWithMockWallet(log zerolog.Logger, resu
 
 	log.Info().Str("reward", rewardAmount.String()).Msg("Transfer completed")
 	return nil
-} 
+}

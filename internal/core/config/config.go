@@ -82,7 +82,6 @@ func (cm *ConfigManager) GetConfig() (*Config, error) {
 		return cm.config, nil
 	}
 
-	// Load config
 	var err error
 	cm.config, err = loadConfigFile(cm.configPath)
 	return cm.config, err

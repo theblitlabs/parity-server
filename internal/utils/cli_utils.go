@@ -5,30 +5,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// CommandConfig holds configuration for a command
 type CommandConfig struct {
-	// Command name and metadata
 	Use     string
 	Short   string
 	Long    string
 	Example string
 
-	// Function to run when the command is executed
 	RunFunc func(cmd *cobra.Command, args []string) error
 
-	// Flags
 	Flags map[string]Flag
 }
 
-// Flag represents a command line flag
 type Flag struct {
-	// Flag type and metadata
 	Type        FlagType
 	Shorthand   string
 	Description string
 	Required    bool
 
-	// Default values for different flag types
 	DefaultString  string
 	DefaultInt     int
 	DefaultFloat64 float64

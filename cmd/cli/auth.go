@@ -43,7 +43,6 @@ func RunAuth() {
 				return fmt.Errorf("failed to get private key flag: %w", err)
 			}
 
-			// Use the config from ConfigManager
 			return ExecuteAuth(privateKey, config.GetConfigManager().GetConfigPath())
 		},
 	}, logger)
@@ -58,7 +57,6 @@ func ExecuteAuth(privateKey string, configPath string) error {
 		return fmt.Errorf("private key is required")
 	}
 
-	// Set the config path and get the config
 	configManager := config.GetConfigManager()
 	configManager.SetConfigPath(configPath)
 	cfg, err := configManager.GetConfig()

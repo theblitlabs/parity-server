@@ -33,7 +33,6 @@ type WSMessage struct {
 	Payload interface{} `json:"payload"`
 }
 
-// TaskServicer defines the interface for task-related operations needed by WebhookService
 type TaskServicer interface {
 	ListAvailableTasks(ctx context.Context) ([]*models.Task, error)
 }
@@ -98,7 +97,6 @@ func (s *WebhookService) RegisterWebhook(req RegisterWebhookRequest) (string, er
 		Int("total_webhooks", len(s.webhooks)).
 		Msg("Webhook registered")
 
-	// Send initial available tasks
 	go s.sendInitialNotification(webhook)
 
 	return webhookID, nil
@@ -303,4 +301,4 @@ func (s *WebhookService) CleanupResources() {
 
 	log := gologger.WithComponent("webhook")
 	log.Info().Msg("Webhook resources cleaned up")
-} 
+}

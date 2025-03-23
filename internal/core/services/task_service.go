@@ -86,16 +86,12 @@ func (s *TaskService) CreateTask(ctx context.Context, task *models.Task) error {
 		return err
 	}
 
-	// After creating the task, find available runners and notify them
 	runners, err := s.runnerService.ListRunnersByStatus(ctx, models.RunnerStatusOnline)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to list available runners")
-		// Don't return error here, as task creation was successful
 	} else if len(runners) > 0 {
-		// Try to assign the task to available runners
 		if err := s.assignTasksToRunner([]*models.Task{task}, runners); err != nil {
 			log.Error().Err(err).Str("task_id", task.ID.String()).Msg("Failed to notify runners about new task")
-			// Don't return error as task creation was successful
 		}
 	}
 
@@ -345,7 +341,6 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		return fmt.Errorf("task is not in running status")
 	}
 
-	// Convert TaskResult to ResourceMetrics
 	metrics := ports.ResourceMetrics{
 		CPUSeconds:      result.CPUSeconds,
 		EstimatedCycles: result.EstimatedCycles,
@@ -354,11 +349,9 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		NetworkDataGB:   result.NetworkDataGB,
 	}
 
-	// Calculate reward based on resource metrics
 	reward := s.rewardCalculator.CalculateReward(metrics)
 	result.Reward = reward
 
-	// Save task result
 	if err := s.repo.SaveTaskResult(ctx, result); err != nil {
 		log.Error().Err(err).
 			Str("task_id", result.TaskID.String()).
@@ -366,7 +359,6 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		return err
 	}
 
-	// Mark task as completed
 	task.Status = models.TaskStatusCompleted
 	task.UpdatedAt = time.Now()
 
@@ -377,14 +369,12 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		return err
 	}
 
-	// Distribute rewards if reward client is configured
 	if s.rewardClient != nil {
 		if err := s.rewardClient.DistributeRewards(result); err != nil {
 			log.Error().Err(err).
 				Str("task_id", result.TaskID.String()).
 				Float64("reward", result.Reward).
 				Msg("Failed to distribute rewards")
-			// Don't return error here as task completion was successful
 		}
 	}
 
@@ -414,7 +404,6 @@ func (s *TaskService) MonitorTasks() {
 						Time("last_update", task.UpdatedAt).
 						Msg("Task appears to be stalled")
 
-					// Get the runner assigned to this task
 					runner, err := s.runnerService.GetRunner(context.Background(), task.RunnerID)
 					if err != nil {
 						log.Error().Err(err).
@@ -424,7 +413,6 @@ func (s *TaskService) MonitorTasks() {
 						continue
 					}
 
-					// Update runner status to offline
 					runner.Status = models.RunnerStatusOffline
 					runner.TaskID = nil
 					if _, err := s.runnerService.UpdateRunner(context.Background(), runner); err != nil {
@@ -433,7 +421,6 @@ func (s *TaskService) MonitorTasks() {
 							Msg("Failed to update runner status")
 					}
 
-					// Reset task status to pending
 					task.Status = models.TaskStatusPending
 					task.RunnerID = ""
 					task.UpdatedAt = time.Now()
@@ -458,7 +445,6 @@ func (s *TaskService) MonitorTasks() {
 func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*models.Runner) error {
 	log := gologger.WithComponent("task_service")
 
-	// Sort runners by load (least loaded first)
 	sortRunnersByLoad(runners)
 
 	for _, task := range tasks {
@@ -477,7 +463,6 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 			continue
 		}
 
-		// Update task with runner ID
 		task.RunnerID = assignedRunner.DeviceID
 		task.UpdatedAt = time.Now()
 
@@ -489,7 +474,6 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 			continue
 		}
 
-		// Update runner with task ID
 		assignedRunner.TaskID = &task.ID
 		if _, err := s.runnerService.UpdateRunner(context.Background(), assignedRunner); err != nil {
 			log.Error().Err(err).
@@ -497,7 +481,6 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 				Str("runner_id", assignedRunner.DeviceID).
 				Msg("Failed to update runner with task ID")
 
-			// Revert task update
 			task.RunnerID = ""
 			if err := s.repo.Update(context.Background(), task); err != nil {
 				log.Error().Err(err).
@@ -507,14 +490,12 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 			continue
 		}
 
-		// Notify runner about the task
 		if err := s.notifyRunnerAboutTask(assignedRunner, task); err != nil {
 			log.Error().Err(err).
 				Str("task_id", task.ID.String()).
 				Str("runner_id", assignedRunner.DeviceID).
 				Msg("Failed to notify runner about task")
 
-			// Revert task and runner updates
 			task.RunnerID = ""
 			if err := s.repo.Update(context.Background(), task); err != nil {
 				log.Error().Err(err).
@@ -544,11 +525,9 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 		return nil
 	}
 
-	// Generate a nonce for the task
 	nonce := s.nonceService.GenerateNonce()
 	task.Nonce = nonce
 
-	// Update task with nonce
 	if err := s.repo.Update(context.Background(), task); err != nil {
 		log.Error().Err(err).
 			Str("task_id", task.ID.String()).
@@ -556,7 +535,6 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 		return err
 	}
 
-	// Send webhook notification
 	if err := s.sendWebhookNotification(context.Background(), runner, task); err != nil {
 		log.Error().Err(err).
 			Str("task_id", task.ID.String()).
@@ -619,7 +597,6 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 
 func sortRunnersByLoad(runners []*models.Runner) {
 	sort.Slice(runners, func(i, j int) bool {
-		// Runners with no task are considered less loaded
 		if runners[i].TaskID == nil && runners[j].TaskID != nil {
 			return true
 		}
@@ -631,11 +608,9 @@ func sortRunnersByLoad(runners []*models.Runner) {
 }
 
 func isRunnerCompatibleWithTask(runner *models.Runner, task *models.Task) bool {
-	// Runner must be online and not currently assigned to a task
 	if runner.Status != models.RunnerStatusOnline || runner.TaskID != nil {
 		return false
 	}
 
-	// For now, all online runners without a task are considered compatible
 	return true
-} 
+}

@@ -23,7 +23,6 @@ func NewNonceService() *NonceService {
 
 	httpClients := http.ForURLs(urls, chainHash)
 	if len(httpClients) == 0 {
-		// Fallback to a basic client if drand client creation fails
 		return &NonceService{}
 	}
 
@@ -34,7 +33,6 @@ func NewNonceService() *NonceService {
 	)
 
 	if err != nil {
-		// Fallback to a basic client if drand client creation fails
 		return &NonceService{}
 	}
 
@@ -45,14 +43,12 @@ func NewNonceService() *NonceService {
 
 func (s *NonceService) GenerateNonce() string {
 	if s.client != nil {
-		// Try to get randomness from drand
 		result, err := s.client.Get(context.Background(), 0)
 		if err == nil {
 			return hex.EncodeToString(result.Randomness())
 		}
 	}
 
-	// Fallback to UUID-based nonce if drand fails
 	return hex.EncodeToString([]byte(fmt.Sprintf("%d-%s", time.Now().UnixNano(), uuid.New().String())))
 }
 
@@ -68,4 +64,4 @@ func (s *NonceService) VerifyNonce(taskNonce string, taskOutput string) bool {
 		Msg("Verifying nonce in task output")
 
 	return strings.Contains(taskOutput, taskNonce)
-} 
+}
