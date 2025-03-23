@@ -25,7 +25,6 @@ func NewTaskRepository(db *gorm.DB) *TaskRepository {
 }
 
 func (r *TaskRepository) Create(ctx context.Context, task *models.Task) error {
-	// Ensure Config is valid JSON
 	if len(task.Config) == 0 {
 		task.Config = []byte("{}")
 	}

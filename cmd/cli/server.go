@@ -1,11 +1,8 @@
 package cli
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,13 +18,10 @@ import (
 	"github.com/theblitlabs/parity-server/internal/api"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 	"github.com/theblitlabs/parity-server/internal/core/config"
-	"github.com/theblitlabs/parity-server/internal/core/models"
-	"github.com/theblitlabs/parity-server/internal/database"
-	"github.com/theblitlabs/parity-server/internal/database/repositories"
 	"github.com/theblitlabs/parity-server/internal/services"
+	"github.com/theblitlabs/parity-server/internal/storage/db"
 	"github.com/theblitlabs/parity-server/internal/utils"
 
-	"github.com/google/uuid"
 )
 
 
@@ -42,10 +36,14 @@ func RunServer() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	db, err := database.Connect(ctx, cfg.Database.URL)
-	if err != nil {
+	dbManager := db.GetDBManager()
+	if err := dbManager.Connect(ctx, cfg.Database.URL); err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to database")
 	}
+	
+	gormDB := dbManager.GetDB()
+	db.InitRepositoryFactory(gormDB)
+	repoFactory := db.GetRepositoryFactory()
 
 	log.Info().Msg("Successfully connected to database")
 
@@ -55,8 +53,8 @@ func RunServer() {
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 	defer shutdownCancel()
 
-	taskRepo := repositories.NewTaskRepository(db)
-	runnerRepo := repositories.NewRunnerRepository(db)
+	taskRepo := repoFactory.TaskRepository()
+	runnerRepo := repoFactory.RunnerRepository()
 
 	rewardCalculator := services.NewRewardCalculator()
 
@@ -220,17 +218,12 @@ func RunServer() {
 			Msg("Webhook resources cleanup completed")
 
 		dbCloseStart := time.Now()
-		sqlDB, err := db.DB()
-		if err != nil {
-			log.Error().Err(err).Msg("Error getting underlying *sql.DB instance")
+		if err := dbManager.Close(); err != nil {
+			log.Error().Err(err).Msg("Error closing database connection")
 		} else {
-			if err := sqlDB.Close(); err != nil {
-				log.Error().Err(err).Msg("Error closing database connection")
-			} else {
-				log.Info().
-					Dur("duration_ms", time.Since(dbCloseStart)).
-					Msg("Database connection closed successfully")
-			}
+			log.Info().
+				Dur("duration_ms", time.Since(dbCloseStart)).
+				Msg("Database connection closed successfully")
 		}
 
 		log.Info().Msg("Shutdown complete")
@@ -242,86 +235,4 @@ func RunServer() {
 	}
 
 	<-shutdownCtx.Done()
-}
-
-func pushTaskToRunner(taskID string, runnerID string, cfg *config.Config) error {
-	log := gologger.WithComponent("task_push")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	db, err := database.Connect(ctx, cfg.Database.URL)
-	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
-	}
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		return fmt.Errorf("error getting *sql.DB: %w", err)
-	}
-	defer sqlDB.Close()
-
-	taskRepo := repositories.NewTaskRepository(db)
-	runnerRepo := repositories.NewRunnerRepository(db)
-	runnerService := services.NewRunnerService(runnerRepo)
-
-	taskUUID, err := uuid.Parse(taskID)
-	if err != nil {
-		return fmt.Errorf("invalid task ID: %w", err)
-	}
-
-	task, err := taskRepo.Get(ctx, taskUUID)
-	if err != nil {
-		return fmt.Errorf("failed to get task: %w", err)
-	}
-
-	runner, err := runnerService.GetRunner(ctx, runnerID)
-	if err != nil {
-		return fmt.Errorf("failed to get runner: %w", err)
-	}
-
-	if runner.Webhook == "" {
-		return fmt.Errorf("runner has no webhook URL")
-	}
-
-	type WebhookMessage struct {
-		Type    string          `json:"type"`
-		Payload json.RawMessage `json:"payload"`
-	}
-
-	tasks := []*models.Task{task}
-	tasksJSON, err := json.Marshal(tasks)
-	if err != nil {
-		return fmt.Errorf("failed to marshal tasks: %w", err)
-	}
-
-	message := WebhookMessage{
-		Type:    "available_tasks",
-		Payload: tasksJSON,
-	}
-
-	messageJSON, err := json.Marshal(message)
-	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
-	}
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Post(runner.Webhook, "application/json", bytes.NewBuffer(messageJSON))
-	if err != nil {
-		return fmt.Errorf("failed to send webhook: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("webhook failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	log.Info().
-		Str("task_id", taskID).
-		Str("runner_id", runnerID).
-		Str("webhook", runner.Webhook).
-		Msg("Successfully pushed task to runner")
-
-	return nil
 }
