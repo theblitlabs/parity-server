@@ -6,12 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -27,23 +25,11 @@ import (
 	"github.com/theblitlabs/parity-server/internal/database"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
 	"github.com/theblitlabs/parity-server/internal/services"
+	"github.com/theblitlabs/parity-server/internal/utils"
 
 	"github.com/google/uuid"
 )
 
-func verifyPortAvailable(host string, port string) error {
-	portNum, err := strconv.Atoi(port)
-	if err != nil {
-		return fmt.Errorf("invalid port number: %w", err)
-	}
-
-	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, portNum))
-	if err != nil {
-		return fmt.Errorf("port %s is not available: %w", port, err)
-	}
-	ln.Close()
-	return nil
-}
 
 func RunServer() {
 	log := gologger.Get()
@@ -168,7 +154,7 @@ func RunServer() {
 		cfg.Server.Endpoint,
 	)
 
-	if err := verifyPortAvailable(cfg.Server.Host, cfg.Server.Port); err != nil {
+	if err := utils.VerifyPortAvailable(cfg.Server.Host, cfg.Server.Port); err != nil {
 		log.Fatal().
 			Err(err).
 			Str("host", cfg.Server.Host).
