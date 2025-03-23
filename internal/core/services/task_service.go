@@ -337,8 +337,14 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		return err
 	}
 
-	if task.Status != models.TaskStatusRunning {
-		return fmt.Errorf("task is not in running status")
+	if task.Status != models.TaskStatusRunning &&
+		task.Status != models.TaskStatusCompleted &&
+		task.Status != models.TaskStatusPending {
+		log.Warn().
+			Str("task_id", result.TaskID.String()).
+			Str("current_status", string(task.Status)).
+			Msg("Attempting to save result for task that is not in running, completed, or pending status")
+		return fmt.Errorf("task is not in a valid status: %s", task.Status)
 	}
 
 	metrics := ports.ResourceMetrics{
@@ -359,14 +365,24 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		return err
 	}
 
-	task.Status = models.TaskStatusCompleted
-	task.UpdatedAt = time.Now()
+	if task.Status != models.TaskStatusCompleted {
+		task.Status = models.TaskStatusCompleted
+		task.UpdatedAt = time.Now()
 
-	if err := s.repo.Update(ctx, task); err != nil {
-		log.Error().Err(err).
-			Str("task_id", result.TaskID.String()).
-			Msg("Failed to update task status")
-		return err
+		if task.CompletedAt == nil {
+			now := time.Now()
+			task.CompletedAt = &now
+		}
+
+		if err := s.repo.Update(ctx, task); err != nil {
+			log.Error().Err(err).
+				Str("task_id", result.TaskID.String()).
+				Msg("Failed to update task status")
+		} else {
+			log.Info().
+				Str("task_id", result.TaskID.String()).
+				Msg("Task marked as completed after receiving results")
+		}
 	}
 
 	if s.rewardClient != nil {
@@ -491,24 +507,10 @@ func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*model
 		}
 
 		if err := s.notifyRunnerAboutTask(assignedRunner, task); err != nil {
-			log.Error().Err(err).
+			log.Warn().Err(err).
 				Str("task_id", task.ID.String()).
 				Str("runner_id", assignedRunner.DeviceID).
-				Msg("Failed to notify runner about task")
-
-			task.RunnerID = ""
-			if err := s.repo.Update(context.Background(), task); err != nil {
-				log.Error().Err(err).
-					Str("task_id", task.ID.String()).
-					Msg("Failed to revert task runner ID")
-			}
-
-			assignedRunner.TaskID = nil
-			if _, err := s.runnerService.UpdateRunner(context.Background(), assignedRunner); err != nil {
-				log.Error().Err(err).
-					Str("runner_id", assignedRunner.DeviceID).
-					Msg("Failed to revert runner task ID")
-			}
+				Msg("Failed to notify runner about task, but keeping assignment")
 		}
 	}
 
@@ -536,11 +538,10 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 	}
 
 	if err := s.sendWebhookNotification(context.Background(), runner, task); err != nil {
-		log.Error().Err(err).
+		log.Warn().Err(err).
 			Str("task_id", task.ID.String()).
 			Str("runner_id", runner.DeviceID).
-			Msg("Failed to send webhook notification")
-		return err
+			Msg("Failed to send webhook notification but continuing")
 	}
 
 	return nil
@@ -549,15 +550,54 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *models.Runner, task *models.Task) error {
 	log := gologger.WithComponent("task_service")
 
+	var taskConfig map[string]interface{}
+	if task.Config != nil {
+		if err := json.Unmarshal(task.Config, &taskConfig); err != nil {
+			log.Error().Err(err).
+				Str("task_id", task.ID.String()).
+				Msg("Failed to unmarshal task config")
+			return fmt.Errorf("failed to unmarshal task config: %w", err)
+		}
+	}
+
+	var environmentMap map[string]interface{}
+	if task.Environment != nil {
+		environmentMap = map[string]interface{}{
+			"type":   task.Environment.Type,
+			"config": task.Environment.Config,
+		}
+	}
+
+	taskPayload := map[string]interface{}{
+		"id":          task.ID.String(),
+		"title":       task.Title,
+		"description": task.Description,
+		"type":        task.Type,
+		"config":      taskConfig,
+		"environment": environmentMap,
+		"nonce":       task.Nonce,
+		"status":      task.Status,
+	}
+
+	if task.CompletedAt != nil {
+		taskPayload["completed_at"] = task.CompletedAt.Format(time.RFC3339)
+	}
+
 	payload := map[string]interface{}{
-		"type": "task_assigned",
-		"task": task,
+		"type":    "available_tasks",
+		"payload": taskPayload,
 	}
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal webhook payload: %w", err)
 	}
+
+	log.Debug().
+		Str("task_id", task.ID.String()).
+		Str("runner_id", runner.DeviceID).
+		RawJSON("payload", payloadBytes).
+		Msg("Sending webhook notification")
 
 	req, err := http.NewRequestWithContext(ctx, "POST", runner.Webhook, bytes.NewReader(payloadBytes))
 	if err != nil {
@@ -568,7 +608,7 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 	req.Header.Set("X-Runner-ID", runner.DeviceID)
 
 	client := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
 			MaxIdleConns:       100,
 			IdleConnTimeout:    90 * time.Second,

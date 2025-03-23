@@ -8,4 +8,4 @@ import (
 
 type TaskServicer interface {
 	ListAvailableTasks(ctx context.Context) ([]*models.Task, error)
-} 
+}

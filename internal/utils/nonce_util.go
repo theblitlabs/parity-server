@@ -26,4 +26,4 @@ func VerifyNonce(taskNonce string, taskOutput string) bool {
 		return false
 	}
 	return strings.Contains(taskOutput, taskNonce)
-} 
+}

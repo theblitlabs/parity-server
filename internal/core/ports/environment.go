@@ -9,4 +9,4 @@ type Environment interface {
 	Run(task *models.Task) error
 	Cleanup() error
 	GetType() string
-} 
+}

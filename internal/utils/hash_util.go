@@ -9,4 +9,4 @@ import (
 func HashDeviceID(deviceID string) string {
 	hash := sha256.Sum256([]byte(deviceID))
 	return hex.EncodeToString(hash[:])
-} 
+}
