@@ -537,7 +537,10 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 		return err
 	}
 
-	if err := s.sendWebhookNotification(context.Background(), runner, task); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := s.sendWebhookNotification(ctx, runner, task); err != nil {
 		log.Warn().Err(err).
 			Str("task_id", task.ID.String()).
 			Str("runner_id", runner.DeviceID).
@@ -593,7 +596,7 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 		return fmt.Errorf("failed to marshal webhook payload: %w", err)
 	}
 
-	log.Debug().
+	log.Info().
 		Str("task_id", task.ID.String()).
 		Str("runner_id", runner.DeviceID).
 		RawJSON("payload", payloadBytes).
@@ -608,7 +611,6 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 	req.Header.Set("X-Runner-ID", runner.DeviceID)
 
 	client := &http.Client{
-		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
 			MaxIdleConns:       100,
 			IdleConnTimeout:    90 * time.Second,
