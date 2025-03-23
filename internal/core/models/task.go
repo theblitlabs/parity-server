@@ -9,8 +9,10 @@ import (
 	"github.com/google/uuid"
 )
 
-type TaskStatus string
-type TaskType string
+type (
+	TaskStatus string
+	TaskType   string
+)
 
 const (
 	TaskStatusPending     TaskStatus = "pending"

@@ -39,7 +39,6 @@ func RunServer() {
 		InitHeartbeatService().
 		InitRouter().
 		Build()
-
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize server")
 	}

@@ -27,7 +27,6 @@ func NewNonceService() *NonceService {
 		client.WithChainHash(chainHash),
 		client.WithCacheSize(0), // Disable caching for nonces
 	)
-
 	if err != nil {
 		return &NonceService{}
 	}

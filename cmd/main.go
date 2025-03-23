@@ -12,8 +12,10 @@ import (
 	"github.com/theblitlabs/parity-server/internal/core/config"
 )
 
-var logMode string
-var configPath string
+var (
+	logMode    string
+	configPath string
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "parity-server",

@@ -47,7 +47,6 @@ func (s *S3Service) UploadDockerImage(ctx context.Context, imageData []byte, ima
 		CacheControl:  aws.String("max-age=31536000"),
 		ContentLength: aws.Int64(int64(len(imageData))),
 	})
-
 	if err != nil {
 		log.Error().Err(err).
 			Str("bucket", s.bucketName).
@@ -61,7 +60,6 @@ func (s *S3Service) UploadDockerImage(ctx context.Context, imageData []byte, ima
 		Bucket: aws.String(s.bucketName),
 		Key:    aws.String(key),
 	}, s3.WithPresignExpires(24*time.Hour)) // URL valid for 24 hours
-
 	if err != nil {
 		log.Error().Err(err).
 			Str("bucket", s.bucketName).
@@ -87,7 +85,6 @@ func (s *S3Service) DeleteDockerImage(ctx context.Context, imageURL string) erro
 		Bucket: aws.String(s.bucketName),
 		Key:    aws.String(key),
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to delete Docker image: %w", err)
 	}

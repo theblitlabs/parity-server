@@ -11,9 +11,7 @@ import (
 	"github.com/theblitlabs/parity-server/internal/core/models"
 )
 
-var (
-	ErrRunnerNotFound = errors.New("runner not found")
-)
+var ErrRunnerNotFound = errors.New("runner not found")
 
 type RunnerRepository interface {
 	Create(ctx context.Context, runner *models.Runner) error

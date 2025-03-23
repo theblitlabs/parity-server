@@ -12,9 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var (
-	ErrTaskNotFound = errors.New("task not found")
-)
+var ErrTaskNotFound = errors.New("task not found")
 
 type TaskRepository struct {
 	db *gorm.DB

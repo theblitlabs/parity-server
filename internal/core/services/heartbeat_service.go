@@ -78,7 +78,6 @@ func (s *HeartbeatService) Start() error {
 			}
 		}
 	})
-
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to schedule heartbeat check")
 		return err

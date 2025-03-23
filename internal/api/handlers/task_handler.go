@@ -125,7 +125,6 @@ func (h *TaskHandler) UnregisterWebhook(w http.ResponseWriter, r *http.Request) 
 		Webhook:  "",
 		Status:   models.RunnerStatusOffline,
 	})
-
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
