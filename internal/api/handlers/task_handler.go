@@ -3,9 +3,6 @@ package handlers
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,8 +16,10 @@ import (
 
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
-	"github.com/theblitlabs/parity-server/internal/models"
-	"github.com/theblitlabs/parity-server/internal/services"
+	"github.com/theblitlabs/parity-server/internal/core/models"
+	"github.com/theblitlabs/parity-server/internal/core/ports"
+	"github.com/theblitlabs/parity-server/internal/core/services"
+	"github.com/theblitlabs/parity-server/internal/utils"
 )
 
 type WebhookRegistration struct {
@@ -53,21 +52,8 @@ type CreateTaskRequest struct {
 	CreatorID   string                    `json:"creator_id"`
 }
 
-type TaskService interface {
-	CreateTask(ctx context.Context, task *models.Task) error
-	GetTask(ctx context.Context, id string) (*models.Task, error)
-	ListAvailableTasks(ctx context.Context) ([]*models.Task, error)
-	AssignTaskToRunner(ctx context.Context, taskID string, runnerID string) error
-	GetTaskReward(ctx context.Context, taskID string) (float64, error)
-	GetTasks(ctx context.Context) ([]models.Task, error)
-	StartTask(ctx context.Context, id string) error
-	CompleteTask(ctx context.Context, id string) error
-	SaveTaskResult(ctx context.Context, result *models.TaskResult) error
-	GetTaskResult(ctx context.Context, taskID string) (*models.TaskResult, error)
-}
-
 type TaskHandler struct {
-	service        TaskService
+	service        ports.TaskService
 	webhookService *services.WebhookService
 	s3Service      *services.S3Service
 	stakeWallet    *walletsdk.StakeWallet
@@ -76,7 +62,7 @@ type TaskHandler struct {
 	runnerService  *services.RunnerService
 }
 
-func NewTaskHandler(service TaskService, webhookService *services.WebhookService, runnerService *services.RunnerService, s3Service *services.S3Service) *TaskHandler {
+func NewTaskHandler(service ports.TaskService, webhookService *services.WebhookService, runnerService *services.RunnerService, s3Service *services.S3Service) *TaskHandler {
 	return &TaskHandler{
 		service:        service,
 		webhookService: webhookService,
@@ -139,7 +125,6 @@ func (h *TaskHandler) UnregisterWebhook(w http.ResponseWriter, r *http.Request) 
 		Webhook:  "",
 		Status:   models.RunnerStatusOffline,
 	})
-
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -174,32 +159,21 @@ func (h *TaskHandler) GetTaskResult(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func generateNonce() string {
-	nonceBytes := make([]byte, 32)
-	if _, err := rand.Read(nonceBytes); err != nil {
-		nonceBytes = []byte(fmt.Sprintf("%d-%s", time.Now().UnixNano(), uuid.New().String()))
-	}
-	return hex.EncodeToString(nonceBytes)
-}
-
 func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	log := gologger.Get()
 	log.Info().Msg("Creating task")
 
-	// Check content type for multipart form data
 	contentType := r.Header.Get("Content-Type")
 	var req CreateTaskRequest
 	var dockerImage []byte
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		// Parse multipart form data
 		if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max
 			log.Error().Err(err).Msg("Failed to parse multipart form")
 			http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
 			return
 		}
 
-		// Get task data from form
 		taskData := r.FormValue("task")
 		if taskData == "" {
 			http.Error(w, "Task data is required", http.StatusBadRequest)
@@ -214,10 +188,8 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Always set type to Docker for multipart requests
 		req.Type = models.TaskTypeDocker
 
-		// Get Docker image file if present
 		file, header, err := r.FormFile("image")
 		if err == nil {
 			defer file.Close()
@@ -233,7 +205,6 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// Upload Docker image to S3
 			imageURL, err := h.s3Service.UploadDockerImage(r.Context(), dockerImage, strings.TrimSuffix(header.Filename, ".tar"))
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to upload Docker image to S3")
@@ -241,7 +212,6 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// Create Docker environment config if not present
 			if req.Environment == nil {
 				req.Environment = &models.EnvironmentConfig{
 					Type: "docker",
@@ -252,14 +222,12 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// Create task config
 			taskConfig := models.TaskConfig{
 				Command:        req.Command,
 				DockerImageURL: imageURL,
 				ImageName:      strings.TrimSuffix(header.Filename, ".tar"),
 			}
 
-			// Marshal config
 			var configErr error
 			req.Config, configErr = json.Marshal(taskConfig)
 			if configErr != nil {
@@ -269,14 +237,12 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		// Handle regular JSON request
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			log.Error().Err(err).Msg("Failed to decode request body")
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		// For JSON requests with Docker image
 		if req.Image != "" {
 			req.Type = models.TaskTypeDocker
 			if req.Environment == nil {
@@ -337,7 +303,6 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Validate Docker configuration
 		var taskConfig models.TaskConfig
 		if err := json.Unmarshal(req.Config, &taskConfig); err != nil {
 			log.Error().Err(err).Msg("Failed to unmarshal task config")
@@ -356,7 +321,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	nonce := generateNonce()
+	nonce := utils.GenerateNonce()
 
 	log.Debug().
 		Str("nonce", nonce).
@@ -419,7 +384,6 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// First get the task to check its current status
 	task, err := h.service.GetTask(ctx, taskID)
 	if err != nil {
 		log.Error().Err(err).Str("task_id", taskID).Msg("Failed to get task")
@@ -427,14 +391,12 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If task is already completed, return early
 	if task.Status == models.TaskStatusCompleted {
 		log.Warn().Str("task_id", taskID).Msg("Cannot start already completed task")
 		http.Error(w, "Task is already completed", http.StatusConflict)
 		return
 	}
 
-	// Check if task is already assigned to this runner
 	runner, err := h.runnerService.GetRunner(ctx, runnerID)
 	if err != nil {
 		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to get runner")
@@ -442,7 +404,6 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If task is already running and assigned to this runner, we can proceed
 	if task.Status == models.TaskStatusRunning {
 		if runner.TaskID != nil && *runner.TaskID == task.ID {
 			log.Info().
@@ -452,7 +413,6 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			return
 		} else {
-			// Task is running but not by this runner
 			log.Warn().
 				Str("task_id", taskID).
 				Str("runner_id", runnerID).
@@ -462,7 +422,6 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Only try to assign if task is in pending state
 	if task.Status == models.TaskStatusPending {
 		if err := h.service.AssignTaskToRunner(ctx, taskID, runnerID); err != nil {
 			if err.Error() == "task unavailable" {
@@ -481,7 +440,6 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Get updated task after assignment
 		task, err = h.service.GetTask(ctx, taskID)
 		if err != nil {
 			log.Error().Err(err).Str("task_id", taskID).Msg("Failed to get updated task")
@@ -490,7 +448,6 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Start the task if it's not already running
 	if task.Status != models.TaskStatusRunning {
 		if err := h.service.StartTask(ctx, taskID); err != nil {
 			if err.Error() == "task already completed" {
@@ -525,7 +482,6 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// First get the task to ensure it exists and get its data
 	task, err := h.service.GetTask(r.Context(), taskID)
 	if err != nil {
 		log.Error().Err(err).
@@ -565,13 +521,11 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Populate result with data from the existing task
 	result.TaskID = taskUUID
 	result.DeviceID = deviceID
 	result.CreatorDeviceID = task.CreatorDeviceID
 	result.SolverDeviceID = deviceID
 
-	// If creator address is not set in task, use creator device ID as temporary address
 	if task.CreatorAddress == "" {
 		result.CreatorAddress = task.CreatorDeviceID
 		log.Debug().
@@ -585,9 +539,7 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 	result.RunnerAddress = deviceID
 	result.CreatedAt = time.Now()
 
-	// Calculate device ID hash
-	hash := sha256.Sum256([]byte(deviceID))
-	result.DeviceIDHash = hex.EncodeToString(hash[:])
+	result.DeviceIDHash = utils.HashDeviceID(deviceID)
 	result.Clean()
 
 	log.Info().
@@ -768,12 +720,10 @@ func (h *TaskHandler) NotifyRunnerOfTasks(runnerID string, tasks []*models.Task)
 		return fmt.Errorf("runner has no webhook URL")
 	}
 
-	// Skip if no tasks to send
 	if len(tasks) == 0 {
 		return nil
 	}
 
-	// Prepare webhook message
 	tasksJSON, err := json.Marshal(tasks)
 	if err != nil {
 		return fmt.Errorf("failed to marshal tasks: %w", err)
@@ -836,7 +786,6 @@ func (h *TaskHandler) CleanupResources() {
 	h.webhookService.CleanupResources()
 }
 
-// RegisterRunner handles runner registration with webhook URL
 func (h *TaskHandler) RegisterRunner(w http.ResponseWriter, r *http.Request) {
 	var registerRequest struct {
 		DeviceID      string              `json:"device_id"`
@@ -853,7 +802,6 @@ func (h *TaskHandler) RegisterRunner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate required fields
 	if registerRequest.DeviceID == "" {
 		http.Error(w, "Device ID is required", http.StatusBadRequest)
 		return
@@ -864,7 +812,6 @@ func (h *TaskHandler) RegisterRunner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create or update runner in the database
 	runner := &models.Runner{
 		DeviceID:      registerRequest.DeviceID,
 		WalletAddress: registerRequest.WalletAddress,
@@ -872,7 +819,6 @@ func (h *TaskHandler) RegisterRunner(w http.ResponseWriter, r *http.Request) {
 		Webhook:       registerRequest.Webhook,
 	}
 
-	// If status is empty, set it to online
 	if runner.Status == "" {
 		runner.Status = models.RunnerStatusOnline
 	}
@@ -900,7 +846,6 @@ func (h *TaskHandler) RegisterRunner(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// RunnerHeartbeat handles heartbeat messages from runners
 func (h *TaskHandler) RunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
 	var message struct {
 		Type    string          `json:"type"`
@@ -933,13 +878,11 @@ func (h *TaskHandler) RunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate required fields
 	if heartbeat.DeviceID == "" {
 		http.Error(w, "Device ID is required", http.StatusBadRequest)
 		return
 	}
 
-	// Update runner status in the database
 	runner := &models.Runner{
 		DeviceID:      heartbeat.DeviceID,
 		WalletAddress: heartbeat.WalletAddress,

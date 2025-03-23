@@ -44,7 +44,13 @@ make build          # Build the application
 make run           # Run the application
 make clean         # Clean build files
 make deps          # Download dependencies
-make fmt           # Format code
+make fmt           # Format code using gofumpt (preferred) or gofmt
+make imports       # Fix imports formatting
+make format        # Run all formatters (gofumpt + goimports)
+make lint          # Run linters
+make format-lint   # Format code and run linters in one step
+make check-format  # Check code formatting without applying changes
+make install-lint-tools # Install formatting and linting tools
 make watch         # Run with hot reload (requires air)
 make install       # Install parity command globally
 make uninstall     # Remove parity command from system
@@ -132,9 +138,10 @@ parity-server <command> --help
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+3. Install git hooks for pre-commit checks (`make install-hooks`)
+4. Commit your changes (`git commit -m 'Add some amazing feature'`)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
 
 ### License
 

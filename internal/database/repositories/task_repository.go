@@ -8,13 +8,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/theblitlabs/gologger"
-	"github.com/theblitlabs/parity-server/internal/models"
+	"github.com/theblitlabs/parity-server/internal/core/models"
 	"gorm.io/gorm"
 )
 
-var (
-	ErrTaskNotFound = errors.New("task not found")
-)
+var ErrTaskNotFound = errors.New("task not found")
 
 type TaskRepository struct {
 	db *gorm.DB
@@ -25,7 +23,6 @@ func NewTaskRepository(db *gorm.DB) *TaskRepository {
 }
 
 func (r *TaskRepository) Create(ctx context.Context, task *models.Task) error {
-	// Ensure Config is valid JSON
 	if len(task.Config) == 0 {
 		task.Config = []byte("{}")
 	}

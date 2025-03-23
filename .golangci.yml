@@ -43,6 +43,9 @@ issues:
     - text: "shadow: declaration of"
       linters:
         - govet
+    - text: "S1000: should use for range instead of for { select {} }"
+      linters:
+        - gosimple
 
 # Settings for specific linters
 linters-settings:

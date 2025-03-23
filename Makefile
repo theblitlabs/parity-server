@@ -26,6 +26,16 @@ BUILD_FLAGS=-v
 # Add these lines after the existing parameters
 INSTALL_PATH=/usr/local/bin
 
+# Tool paths
+GOFUMPT_PATH := $(GOPATH)/bin/gofumpt
+GOIMPORTS_PATH := $(GOPATH)/bin/goimports
+GOLANGCI_LINT := $(shell which golangci-lint)
+
+# Lint configuration
+LINT_FLAGS := --timeout=5m
+LINT_CONFIG := .golangci.yml
+LINT_OUTPUT_FORMAT := colored-line-number
+
 .PHONY: all build test run clean deps fmt help docker-up docker-down docker-logs docker-build docker-clean install-air watch tools install uninstall install-lint-tools lint install-hooks
 
 all: clean build
@@ -43,7 +53,7 @@ setup-coverage: ## Create coverage directory
 	@mkdir -p $(COVERAGE_DIR)
 
 run:  ## Run the application
-	$(GOCMD) run $(MAIN_PATH) 
+	$(GOCMD) run $(MAIN_PATH) $(ARGS)
 
 server:  ## Start the parity server
 	$(GOCMD) run $(MAIN_PATH) server
@@ -74,9 +84,65 @@ deps: ## Download dependencies
 	$(GOMOD) download
 	$(GOMOD) tidy
 
-fmt: ## Format code
-	$(GOFMT) ./...
+fmt: ## Format code using gofumpt (preferred) or gofmt
+	@echo "Formatting code..."
+	@if [ -x "$(GOFUMPT_PATH)" ]; then \
+		echo "Using gofumpt for better formatting..."; \
+		$(GOFUMPT_PATH) -l -w .; \
+	else \
+		echo "gofumpt not found, using standard gofmt..."; \
+		$(GOFMT) ./...; \
+		echo "Consider installing gofumpt for better formatting: go install mvdan.cc/gofumpt@latest"; \
+	fi
 
+imports: ## Fix imports formatting and add missing imports
+	@echo "Organizing imports..."
+	@if [ -x "$(GOIMPORTS_PATH)" ]; then \
+		$(GOIMPORTS_PATH) -w -local github.com/theblitlabs/parity-runner .; \
+	else \
+		echo "goimports not found. Installing..."; \
+		go install golang.org/x/tools/cmd/goimports@latest; \
+		$(GOIMPORTS_PATH) -w -local github.com/theblitlabs/parity-runner .; \
+	fi
+
+format: fmt imports ## Run all formatters (gofumpt + goimports)
+	@echo "All formatting completed."
+
+lint: ## Run linting with options (make lint VERBOSE=true CONFIG=custom.yml OUTPUT=json)
+	@echo "Running linters..."
+	$(eval FINAL_LINT_FLAGS := $(LINT_FLAGS))
+	@if [ "$(VERBOSE)" = "true" ]; then \
+		FINAL_LINT_FLAGS="$(FINAL_LINT_FLAGS) -v"; \
+	fi
+	@if [ -n "$(CONFIG)" ]; then \
+		FINAL_LINT_FLAGS="$(FINAL_LINT_FLAGS) --config=$(CONFIG)"; \
+	else \
+		FINAL_LINT_FLAGS="$(FINAL_LINT_FLAGS) --config=$(LINT_CONFIG)"; \
+	fi
+	@if [ -n "$(OUTPUT)" ]; then \
+		FINAL_LINT_FLAGS="$(FINAL_LINT_FLAGS) --out-format=$(OUTPUT)"; \
+	else \
+		FINAL_LINT_FLAGS="$(FINAL_LINT_FLAGS) --out-format=$(LINT_OUTPUT_FORMAT)"; \
+	fi
+	golangci-lint run $(FINAL_LINT_FLAGS)
+
+format-lint: format lint ## Format code and run linters in one step
+
+check-format: ## Check code formatting without applying changes (useful for CI)
+	@echo "Checking code formatting..."
+	@./scripts/check_format.sh
+
+install-lint-tools: ## Install formatting and linting tools
+	@echo "Installing linting and formatting tools..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install mvdan.cc/gofumpt@latest
+	go install golang.org/x/tools/cmd/goimports@latest
+	@echo "Tools installation complete."
+
+install-hooks: ## Install git hooks
+	@echo "Installing git hooks..."
+	@./scripts/hooks/install-hooks.sh
+	
 install-air: ## Install air for hot reloading
 	@if ! command -v air > /dev/null; then \
 		echo "Installing air..." && \
@@ -98,15 +164,5 @@ uninstall: ## Remove parity command from system
 	@echo "Uninstalling parity from $(INSTALL_PATH)..."
 	@sudo rm -f $(INSTALL_PATH)/$(BINARY_NAME)
 	@echo "Uninstallation complete"
-
-lint: ## Run linting
-	golangci-lint run --timeout=5m
-
-install-lint-tools: ## Install linting tools
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
-install-hooks: ## Install git hooks
-	@echo "Installing git hooks..."
-	@./scripts/hooks/install-hooks.sh
 
 .DEFAULT_GOAL := help

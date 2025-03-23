@@ -5,13 +5,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/theblitlabs/parity-server/internal/models"
+	"github.com/theblitlabs/parity-server/internal/core/models"
 	"gorm.io/gorm"
 )
 
-var (
-	ErrRunnerNotFound = errors.New("runner not found")
-)
+var ErrRunnerNotFound = errors.New("runner not found")
 
 type RunnerRepository struct {
 	db *gorm.DB
@@ -22,7 +20,6 @@ func NewRunnerRepository(db *gorm.DB) *RunnerRepository {
 }
 
 func (r *RunnerRepository) Create(ctx context.Context, runner *models.Runner) error {
-
 	dbRunner := models.Runner{
 		DeviceID:      runner.DeviceID,
 		WalletAddress: runner.WalletAddress,
