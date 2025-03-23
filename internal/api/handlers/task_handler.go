@@ -20,6 +20,7 @@ import (
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/core/models"
+	"github.com/theblitlabs/parity-server/internal/core/ports"
 	"github.com/theblitlabs/parity-server/internal/core/services"
 )
 
@@ -53,21 +54,8 @@ type CreateTaskRequest struct {
 	CreatorID   string                    `json:"creator_id"`
 }
 
-type TaskService interface {
-	CreateTask(ctx context.Context, task *models.Task) error
-	GetTask(ctx context.Context, id string) (*models.Task, error)
-	ListAvailableTasks(ctx context.Context) ([]*models.Task, error)
-	AssignTaskToRunner(ctx context.Context, taskID string, runnerID string) error
-	GetTaskReward(ctx context.Context, taskID string) (float64, error)
-	GetTasks(ctx context.Context) ([]models.Task, error)
-	StartTask(ctx context.Context, id string) error
-	CompleteTask(ctx context.Context, id string) error
-	SaveTaskResult(ctx context.Context, result *models.TaskResult) error
-	GetTaskResult(ctx context.Context, taskID string) (*models.TaskResult, error)
-}
-
 type TaskHandler struct {
-	service        TaskService
+	service        ports.TaskService
 	webhookService *services.WebhookService
 	s3Service      *services.S3Service
 	stakeWallet    *walletsdk.StakeWallet
@@ -76,7 +64,7 @@ type TaskHandler struct {
 	runnerService  *services.RunnerService
 }
 
-func NewTaskHandler(service TaskService, webhookService *services.WebhookService, runnerService *services.RunnerService, s3Service *services.S3Service) *TaskHandler {
+func NewTaskHandler(service ports.TaskService, webhookService *services.WebhookService, runnerService *services.RunnerService, s3Service *services.S3Service) *TaskHandler {
 	return &TaskHandler{
 		service:        service,
 		webhookService: webhookService,

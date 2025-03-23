@@ -3,15 +3,7 @@ package models
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
 )
-
-type Environment interface {
-	Setup() error
-	Run(task *Task) error
-	Cleanup() error
-	GetType() string
-}
 
 type EnvironmentConfig struct {
 	Type   string                 `json:"type"`
@@ -27,11 +19,5 @@ func (ec *EnvironmentConfig) Scan(value interface{}) error {
 		*ec = EnvironmentConfig{}
 		return nil
 	}
-
-	bytes, ok := value.([]byte)
-	if !ok {
-		return errors.New("type assertion to []byte failed")
-	}
-
-	return json.Unmarshal(bytes, &ec)
+	return json.Unmarshal(value.([]byte), ec)
 }

@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/theblitlabs/gologger"
-	"github.com/theblitlabs/parity-server/internal/core/models"
+	"github.com/theblitlabs/parity-server/internal/core/ports"
 )
 
 type WebhookRegistration struct {
@@ -33,19 +33,15 @@ type WSMessage struct {
 	Payload interface{} `json:"payload"`
 }
 
-type TaskServicer interface {
-	ListAvailableTasks(ctx context.Context) ([]*models.Task, error)
-}
-
 type WebhookService struct {
 	webhooks     map[string]WebhookRegistration
 	webhookMutex sync.RWMutex
-	taskService  TaskServicer
+	taskService  ports.TaskServicer
 	stopCh       chan struct{}
 	taskUpdateCh chan struct{}
 }
 
-func NewWebhookService(taskService TaskServicer) *WebhookService {
+func NewWebhookService(taskService ports.TaskServicer) *WebhookService {
 	return &WebhookService{
 		webhooks:     make(map[string]WebhookRegistration),
 		taskService:  taskService,
