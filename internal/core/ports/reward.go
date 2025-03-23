@@ -30,4 +30,4 @@ type RewardClient interface {
 type StakeWallet interface {
 	GetStakeInfo(deviceID string) (walletsdk.StakeInfo, error)
 	TransferPayment(creator string, runner string, amount *big.Int) error
-} 
+}

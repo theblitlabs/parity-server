@@ -41,4 +41,4 @@ func GetRepositoryFactory() *RepositoryFactory {
 		repositoryFactory = NewRepositoryFactoryFromManager(dbManager)
 	}
 	return repositoryFactory
-} 
+}

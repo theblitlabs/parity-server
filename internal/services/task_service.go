@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -430,16 +431,29 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 
 func (s *TaskService) MonitorTasks() {
 	log := gologger.WithComponent("task_monitor")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
 	log.Debug().Msg("Monitoring task statuses")
 
 	// Only monitor for stuck or timed out tasks
-	tasks, err := s.repo.ListByStatus(context.Background(), models.TaskStatusRunning)
+	tasks, err := s.repo.ListByStatus(ctx, models.TaskStatusRunning)
 	if err != nil {
+		if strings.Contains(err.Error(), "database is closed") {
+			log.Info().Msg("Database closed, skipping task monitoring during shutdown")
+			return
+		}
 		log.Error().Err(err).Msg("Failed to list tasks")
 		return
 	}
 
 	for _, task := range tasks {
+		if ctx.Err() != nil {
+			log.Info().Msg("Context cancelled, stopping task monitoring")
+			return
+		}
+
 		// Add monitoring logic here if needed
 		// For example, check for stuck tasks, timeouts, etc.
 		log.Debug().

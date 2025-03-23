@@ -35,7 +35,7 @@ The default config path is "config/config.yaml".`,
 		default:
 			gologger.InitWithMode(gologger.LogModePretty)
 		}
-		
+
 		if cmd.Flags().Changed("config") {
 			config.GetConfigManager().SetConfigPath(configPath)
 		}
@@ -60,16 +60,16 @@ func ExecuteServer() error {
 func init() {
 	// Default config path
 	configPath = "config/config.yaml"
-	
+
 	// Check for environment variable override
 	if envPath := os.Getenv("PARITY_CONFIG_PATH"); envPath != "" {
 		configPath = envPath
 	}
-	
+
 	// Pre-initialize config
 	configManager := config.GetConfigManager()
 	configManager.SetConfigPath(configPath)
-	
+
 	// Add global flags
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", configPath, "Path to config file")
 	rootCmd.PersistentFlags().StringVar(&logMode, "log", "pretty", "Log mode: debug, pretty, info, prod, test")

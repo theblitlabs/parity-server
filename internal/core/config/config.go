@@ -64,7 +64,7 @@ func (cm *ConfigManager) SetConfigPath(path string) {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 	cm.configPath = path
-	cm.config = nil 
+	cm.config = nil
 }
 
 func (cm *ConfigManager) GetConfig() (*Config, error) {

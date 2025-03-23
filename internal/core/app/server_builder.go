@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -29,14 +30,16 @@ const (
 
 // Server represents a fully configured server with all its dependencies
 type Server struct {
-	Config          *config.Config
-	HttpServer      *http.Server
-	DBManager       *db.DBManager
-	TaskService     *services.TaskService
-	RunnerService   *services.RunnerService
+	Config           *config.Config
+	HttpServer       *http.Server
+	DBManager        *db.DBManager
+	TaskService      *services.TaskService
+	RunnerService    *services.RunnerService
 	HeartbeatService *services.HeartbeatService
-	TaskHandler     *handlers.TaskHandler
-	StopChannel     chan struct{}
+	TaskHandler      *handlers.TaskHandler
+	StopChannel      chan struct{}
+	monitorCancel    context.CancelFunc
+	monitorWg        *sync.WaitGroup
 }
 
 // Shutdown gracefully shuts down the server and all its components
@@ -49,6 +52,28 @@ func (s *Server) Shutdown(ctx context.Context) {
 
 	// Close stop channel to signal background tasks to stop
 	close(s.StopChannel)
+
+	if s.monitorCancel != nil {
+		log.Info().Msg("Cancelling task monitoring context")
+		s.monitorCancel()
+
+		if s.monitorWg != nil {
+			log.Info().Msg("Waiting for task monitoring goroutine to exit")
+			shutdownWaitCh := make(chan struct{})
+
+			go func() {
+				s.monitorWg.Wait()
+				close(shutdownWaitCh)
+			}()
+
+			select {
+			case <-shutdownWaitCh:
+				log.Info().Msg("Task monitoring goroutine exited successfully")
+			case <-time.After(2 * time.Second):
+				log.Warn().Msg("Timed out waiting for task monitoring goroutine to exit")
+			}
+		}
+	}
 
 	// Stop heartbeat service
 	s.HeartbeatService.Stop()
@@ -66,7 +91,7 @@ func (s *Server) Shutdown(ctx context.Context) {
 	// Shutdown HTTP server
 	log.Info().Int("shutdown_timeout_seconds", 15).Msg("Initiating server shutdown sequence")
 	shutdownStart := time.Now()
-	
+
 	if err := s.HttpServer.Shutdown(serverShutdownCtx); err != nil {
 		log.Error().Err(err).Msg("Server shutdown error")
 		if err == context.DeadlineExceeded {
@@ -96,29 +121,30 @@ func (s *Server) Shutdown(ctx context.Context) {
 
 // ServerBuilder builds the server component by component
 type ServerBuilder struct {
-	config            *config.Config
-	dbManager         *db.DBManager
-	repoFactory       *db.RepositoryFactory
-	taskRepo          *repositories.TaskRepository
-	runnerRepo        *repositories.RunnerRepository
-	taskService       *services.TaskService
-	runnerService     *services.RunnerService
-	heartbeatService  *services.HeartbeatService
-	webhookService    *services.WebhookService
-	s3Service         *services.S3Service
-	stakeWallet       *walletsdk.StakeWallet
-	taskHandler       *handlers.TaskHandler
-	httpServer        *http.Server
-	stopChannel       chan struct{}
-	monitorCtx        context.Context
-	monitorCancel     context.CancelFunc
-	err               error
+	config           *config.Config
+	dbManager        *db.DBManager
+	repoFactory      *db.RepositoryFactory
+	taskRepo         *repositories.TaskRepository
+	runnerRepo       *repositories.RunnerRepository
+	taskService      *services.TaskService
+	runnerService    *services.RunnerService
+	heartbeatService *services.HeartbeatService
+	webhookService   *services.WebhookService
+	s3Service        *services.S3Service
+	stakeWallet      *walletsdk.StakeWallet
+	taskHandler      *handlers.TaskHandler
+	httpServer       *http.Server
+	stopChannel      chan struct{}
+	monitorCtx       context.Context
+	monitorCancel    context.CancelFunc
+	monitorWg        *sync.WaitGroup
+	err              error
 }
 
 // NewServerBuilder creates a new server builder with the given configuration
 func NewServerBuilder(cfg *config.Config) *ServerBuilder {
 	return &ServerBuilder{
-		config: cfg,
+		config:      cfg,
 		stopChannel: make(chan struct{}),
 	}
 }
@@ -130,7 +156,7 @@ func (sb *ServerBuilder) InitDatabase() *ServerBuilder {
 	}
 
 	log := gologger.Get()
-	
+
 	// Initialize database connection
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -232,23 +258,38 @@ func (sb *ServerBuilder) InitTaskMonitoring() *ServerBuilder {
 
 	// Set up background task monitoring
 	sb.monitorCtx, sb.monitorCancel = context.WithCancel(context.Background())
-	
-	go func() {
-		cfg, err := config.GetConfigManager().GetConfig()
-		if err != nil {
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	cfg, err := config.GetConfigManager().GetConfig()
+	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
 	}
+	go func() {
+		defer wg.Done()
 		ticker := time.NewTicker(time.Duration(cfg.Scheduler.Interval) * time.Second)
+
 		defer ticker.Stop()
+
 		for {
 			select {
 			case <-sb.monitorCtx.Done():
+				log := gologger.Get()
+				log.Info().Msg("Task monitoring goroutine stopped")
 				return
 			case <-ticker.C:
-				sb.taskService.MonitorTasks()
+				select {
+				case <-sb.monitorCtx.Done():
+					return
+				default:
+					sb.taskService.MonitorTasks()
+				}
 			}
 		}
 	}()
+
+	sb.monitorWg = &wg
 
 	return sb
 }
@@ -356,5 +397,7 @@ func (sb *ServerBuilder) Build() (*Server, error) {
 		HeartbeatService: sb.heartbeatService,
 		TaskHandler:      sb.taskHandler,
 		StopChannel:      sb.stopChannel,
+		monitorCancel:    sb.monitorCancel,
+		monitorWg:        sb.monitorWg,
 	}, nil
-} 
+}

@@ -189,4 +189,4 @@ func (c *EthereumRewardClient) distributeWithMockWallet(log zerolog.Logger, resu
 
 	log.Info().Str("reward", rewardAmount.String()).Msg("Transfer completed")
 	return nil
-} 
+}
