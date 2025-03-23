@@ -3,14 +3,10 @@ package services
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
-	"strings"
-	"time"
 
 	"github.com/drand/drand/client"
 	"github.com/drand/drand/client/http"
-	"github.com/google/uuid"
-	"github.com/theblitlabs/gologger"
+	"github.com/theblitlabs/parity-server/internal/utils"
 )
 
 type NonceService struct {
@@ -49,19 +45,9 @@ func (s *NonceService) GenerateNonce() string {
 		}
 	}
 
-	return hex.EncodeToString([]byte(fmt.Sprintf("%d-%s", time.Now().UnixNano(), uuid.New().String())))
+	return utils.GenerateNonce()
 }
 
 func (s *NonceService) VerifyNonce(taskNonce string, taskOutput string) bool {
-	if taskNonce == "" || taskOutput == "" {
-		return false
-	}
-
-	log := gologger.WithComponent("nonce_service")
-	log.Debug().
-		Str("nonce", taskNonce).
-		Str("output_length", fmt.Sprintf("%d", len(taskOutput))).
-		Msg("Verifying nonce in task output")
-
-	return strings.Contains(taskOutput, taskNonce)
+	return utils.VerifyNonce(taskNonce, taskOutput)
 }

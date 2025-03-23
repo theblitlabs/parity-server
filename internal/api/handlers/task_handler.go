@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -22,6 +21,7 @@ import (
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/core/ports"
 	"github.com/theblitlabs/parity-server/internal/core/services"
+	"github.com/theblitlabs/parity-server/internal/utils"
 )
 
 type WebhookRegistration struct {
@@ -332,7 +332,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	nonce := generateNonce()
+	nonce := utils.GenerateNonce()
 
 	log.Debug().
 		Str("nonce", nonce).
@@ -550,8 +550,7 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 	result.RunnerAddress = deviceID
 	result.CreatedAt = time.Now()
 
-	hash := sha256.Sum256([]byte(deviceID))
-	result.DeviceIDHash = hex.EncodeToString(hash[:])
+	result.DeviceIDHash = utils.HashDeviceID(deviceID)
 	result.Clean()
 
 	log.Info().
