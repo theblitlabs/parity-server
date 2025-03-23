@@ -225,6 +225,7 @@ func (sb *ServerBuilder) InitHeartbeatService() *ServerBuilder {
 
 // InitTaskMonitoring initializes the background task monitoring
 func (sb *ServerBuilder) InitTaskMonitoring() *ServerBuilder {
+	log := gologger.Get()
 	if sb.err != nil {
 		return sb
 	}
@@ -233,7 +234,11 @@ func (sb *ServerBuilder) InitTaskMonitoring() *ServerBuilder {
 	sb.monitorCtx, sb.monitorCancel = context.WithCancel(context.Background())
 	
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
+		cfg, err := config.GetConfigManager().GetConfig()
+		if err != nil {
+		log.Fatal().Err(err).Msg("Failed to load configuration")
+	}
+		ticker := time.NewTicker(time.Duration(cfg.Scheduler.Interval) * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
