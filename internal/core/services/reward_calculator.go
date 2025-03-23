@@ -41,4 +41,4 @@ func (rc *RewardCalculator) CalculateReward(metrics ports.ResourceMetrics) float
 	}
 
 	return totalCost
-}
+} 

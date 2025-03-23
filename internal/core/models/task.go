@@ -79,6 +79,7 @@ type Task struct {
 	Environment     *EnvironmentConfig `json:"environment" gorm:"type:jsonb"`
 	CreatorAddress  string             `json:"creator_address" gorm:"type:varchar(42)"`
 	CreatorDeviceID string             `json:"creator_device_id" gorm:"type:varchar(255)"`
+	RunnerID        string             `json:"runner_id" gorm:"type:varchar(255)"`
 	Nonce           string             `json:"nonce" gorm:"type:varchar(64);not null"`
 	CreatedAt       time.Time          `json:"created_at" gorm:"type:timestamp"`
 	UpdatedAt       time.Time          `json:"updated_at" gorm:"type:timestamp"`

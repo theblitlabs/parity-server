@@ -254,10 +254,18 @@ func (s *WebhookService) sendInitialNotification(webhook WebhookRegistration) {
 
 	tasks, err := s.taskService.ListAvailableTasks(context.Background())
 	if err != nil {
-		log.Error().
-			Err(err).
+		log.Error().Err(err).
 			Str("webhook_id", webhook.ID).
-			Msg("Failed to list tasks for initial webhook notification")
+			Str("url", webhook.URL).
+			Msg("Failed to list tasks for initial notification")
+		return
+	}
+
+	if len(tasks) == 0 {
+		log.Debug().
+			Str("webhook_id", webhook.ID).
+			Str("url", webhook.URL).
+			Msg("No available tasks for initial notification")
 		return
 	}
 
@@ -268,38 +276,31 @@ func (s *WebhookService) sendInitialNotification(webhook WebhookRegistration) {
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		log.Error().
-			Err(err).
+		log.Error().Err(err).
 			Str("webhook_id", webhook.ID).
-			Msg("Failed to marshal initial webhook payload")
+			Str("url", webhook.URL).
+			Msg("Failed to marshal initial notification payload")
 		return
 	}
 
 	client := &http.Client{
 		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:       100,
+			IdleConnTimeout:    90 * time.Second,
+			DisableCompression: true,
+		},
 	}
 
 	s.sendWebhookNotification(client, webhook, payloadBytes)
 }
 
 func (s *WebhookService) CleanupResources() {
+	s.webhookMutex.Lock()
+	defer s.webhookMutex.Unlock()
+
+	s.webhooks = make(map[string]WebhookRegistration)
+
 	log := gologger.WithComponent("webhook")
-
-	s.webhookMutex.RLock()
-	webhookCount := len(s.webhooks)
-	s.webhookMutex.RUnlock()
-
-	log.Info().
-		Int("total_webhooks", webhookCount).
-		Msg("Starting webhook cleanup")
-
-	select {
-	case <-s.taskUpdateCh:
-	default:
-	}
-	close(s.taskUpdateCh)
-
-	log.Info().
-		Int("total_webhooks_cleaned", webhookCount).
-		Msg("Webhook cleanup completed")
-}
+	log.Info().Msg("Webhook resources cleaned up")
+} 

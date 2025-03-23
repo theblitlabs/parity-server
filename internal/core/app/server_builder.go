@@ -17,8 +17,8 @@ import (
 	"github.com/theblitlabs/parity-server/internal/api"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 	"github.com/theblitlabs/parity-server/internal/core/config"
+	"github.com/theblitlabs/parity-server/internal/core/services"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
-	"github.com/theblitlabs/parity-server/internal/services"
 	"github.com/theblitlabs/parity-server/internal/storage/db"
 	"github.com/theblitlabs/parity-server/internal/utils"
 )

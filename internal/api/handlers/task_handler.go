@@ -20,7 +20,7 @@ import (
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/core/models"
-	"github.com/theblitlabs/parity-server/internal/services"
+	"github.com/theblitlabs/parity-server/internal/core/services"
 )
 
 type WebhookRegistration struct {

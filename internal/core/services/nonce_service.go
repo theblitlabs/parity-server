@@ -68,4 +68,4 @@ func (s *NonceService) VerifyNonce(taskNonce string, taskOutput string) bool {
 		Msg("Verifying nonce in task output")
 
 	return strings.Contains(taskOutput, taskNonce)
-}
+} 
