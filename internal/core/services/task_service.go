@@ -66,15 +66,7 @@ func (s *TaskService) SetRewardClient(client ports.RewardClient) {
 }
 
 func (s *TaskService) CreateTask(ctx context.Context, task *models.Task) error {
-	log := gologger.WithComponent("task_service")
-
 	if err := task.Validate(); err != nil {
-		log.Error().Err(err).
-			Interface("task", map[string]interface{}{
-				"title":  task.Title,
-				"type":   task.Type,
-				"config": task.Config,
-			}).Msg("Invalid task")
 		return ErrInvalidTask
 	}
 
@@ -95,31 +87,12 @@ func (s *TaskService) CreateTask(ctx context.Context, task *models.Task) error {
 	}
 
 	if err := s.repo.Create(ctx, task); err != nil {
-		log.Error().Err(err).Str("id", task.ID.String()).Msg("Failed to create task")
 		return err
 	}
 
 	if len(availableRunners) >= MinRunnersForTask {
 		sortRunnersByLoad(availableRunners)
-
-		assignedCount, _, err := s.assignTaskToRunners(ctx, task, availableRunners, MinRunnersForTask)
-		if err != nil {
-			log.Error().Err(err).
-				Str("task_id", task.ID.String()).
-				Msg("Failed to assign runners to task, but task was created")
-		} else {
-			log.Info().
-				Str("task_id", task.ID.String()).
-				Int("assigned_runners", assignedCount).
-				Int("min_runners_required", MinRunnersForTask).
-				Msg("Task created and assigned to runners")
-		}
-	} else {
-		log.Info().
-			Int("available_runners", len(availableRunners)).
-			Int("min_runners_required", MinRunnersForTask).
-			Str("task_id", task.ID.String()).
-			Msg("Task created but waiting for available runners")
+		s.assignTaskToRunners(ctx, task, availableRunners, MinRunnersForTask)
 	}
 
 	return nil
@@ -528,14 +501,13 @@ func (s *TaskService) StopMonitoring() {
 
 func (s *TaskService) MonitorPendingTasks() {
 	log := gologger.WithComponent("task_service")
-	log.Info().Msg("Starting pending tasks monitoring (backup mechanism)")
+	log.Info().Msg("Starting pending tasks monitoring")
 
-	// this is a backup mechanism to ensure that pending tasks are assigned to runners
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	if err := s.processPendingTasks(); err != nil {
-		log.Error().Err(err).Msg("Error processing pending tasks on startup")
+		log.Error().Err(err).Msg("Failed to process pending tasks")
 	}
 
 	for {
@@ -544,9 +516,8 @@ func (s *TaskService) MonitorPendingTasks() {
 			log.Info().Msg("Stopping pending tasks monitoring")
 			return
 		case <-ticker.C:
-			log.Debug().Msg("Running backup pending tasks check")
 			if err := s.processPendingTasks(); err != nil {
-				log.Error().Err(err).Msg("Error processing pending tasks")
+				log.Error().Err(err).Msg("Failed to process pending tasks")
 			}
 		}
 	}
@@ -559,10 +530,6 @@ func (s *TaskService) processPendingTasks() error {
 	if err != nil {
 		return fmt.Errorf("failed to list pending tasks: %w", err)
 	}
-
-	log.Info().
-		Int("pending_tasks_count", len(pendingTasks)).
-		Msg("Found pending tasks")
 
 	if len(pendingTasks) == 0 {
 		return nil
@@ -579,10 +546,6 @@ func (s *TaskService) processPendingTasks() error {
 	}
 
 	if len(availableRunners) < MinRunnersForTask {
-		log.Info().
-			Int("available_runners", len(availableRunners)).
-			Int("min_runners_required", MinRunnersForTask).
-			Msg("Not enough available runners to assign tasks")
 		return nil
 	}
 
@@ -592,11 +555,6 @@ func (s *TaskService) processPendingTasks() error {
 		currentAssignedCount := s.countAssignedRunners(task, runners)
 
 		if currentAssignedCount >= MaxRunnersForTask {
-			log.Info().
-				Str("task_id", task.ID.String()).
-				Int("current_runners", currentAssignedCount).
-				Int("max_runners", MaxRunnersForTask).
-				Msg("Task already has maximum runners assigned")
 			continue
 		}
 
@@ -604,20 +562,11 @@ func (s *TaskService) processPendingTasks() error {
 		targetAssignments := MinRunnersForTask - currentAssignedCount
 		if targetAssignments <= 0 {
 			if len(availableRunners) > MinRunnersForTask {
-				targetAssignments = 1 // Add one more runner at a time beyond minimum
+				targetAssignments = 1
 			} else {
-				continue // Skip if we just have enough for minimum
+				continue
 			}
 		}
-
-		log.Info().
-			Str("task_id", task.ID.String()).
-			Str("task_status", string(task.Status)).
-			Str("task_type", string(task.Type)).
-			Int("current_runners", currentAssignedCount).
-			Int("target_assignments", targetAssignments).
-			Int("remaining_slots", remainingSlots).
-			Msg("Attempting to assign task")
 
 		_, assignedRunnerIDs, err := s.assignTaskToRunners(context.Background(), task, availableRunners, min(targetAssignments, remainingSlots))
 		if err != nil {
@@ -637,10 +586,6 @@ func (s *TaskService) processPendingTasks() error {
 		}
 
 		if len(availableRunners) < MinRunnersForTask {
-			log.Info().
-				Int("remaining_runners", len(availableRunners)).
-				Int("min_runners_required", MinRunnersForTask).
-				Msg("Not enough remaining runners for more tasks")
 			break
 		}
 	}
@@ -649,8 +594,6 @@ func (s *TaskService) processPendingTasks() error {
 }
 
 func (s *TaskService) assignTaskToRunners(ctx context.Context, task *models.Task, availableRunners []*models.Runner, targetAssignments int) (int, []string, error) {
-	log := gologger.WithComponent("task_service")
-
 	assignedCount := 0
 	assignedRunners := make([]string, 0, targetAssignments)
 
@@ -658,26 +601,12 @@ func (s *TaskService) assignTaskToRunners(ctx context.Context, task *models.Task
 		runner := availableRunners[i]
 		if isRunnerCompatibleWithTask(runner) {
 			if err := s.assignTaskToRunner(ctx, task, runner); err != nil {
-				log.Error().Err(err).
-					Str("task_id", task.ID.String()).
-					Str("runner_id", runner.DeviceID).
-					Msg("Failed to assign task to runner")
 				continue
 			}
 
 			assignedCount++
 			assignedRunners = append(assignedRunners, runner.DeviceID)
 		}
-	}
-
-	if assignedCount > 0 {
-		log.Info().
-			Str("task_id", task.ID.String()).
-			Interface("assigned_runners", assignedRunners).
-			Int("new_assigned_count", assignedCount).
-			Int("min_runners", MinRunnersForTask).
-			Int("max_runners", MaxRunnersForTask).
-			Msg("Successfully assigned runners to task")
 	}
 
 	return assignedCount, assignedRunners, nil
@@ -708,24 +637,14 @@ func (s *TaskService) assignTaskToRunner(ctx context.Context, task *models.Task,
 		log.Warn().Err(err).
 			Str("task_id", task.ID.String()).
 			Str("runner_id", runner.DeviceID).
-			Msg("Failed to notify runner about task, but keeping assignment")
+			Msg("Failed to notify runner about task")
 	}
-
-	log.Info().
-		Str("task_id", task.ID.String()).
-		Str("runner_id", runner.DeviceID).
-		Msg("Successfully assigned task to runner")
 
 	return nil
 }
 
 func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.Task) error {
-	log := gologger.WithComponent("task_service")
-
 	if runner.Webhook == "" {
-		log.Debug().
-			Str("runner_id", runner.DeviceID).
-			Msg("Runner has no webhook URL configured")
 		return nil
 	}
 
@@ -733,23 +652,13 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 	task.Nonce = nonce
 
 	if err := s.repo.Update(context.Background(), task); err != nil {
-		log.Error().Err(err).
-			Str("task_id", task.ID.String()).
-			Msg("Failed to update task with nonce")
 		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	if err := s.sendWebhookNotification(ctx, runner, task); err != nil {
-		log.Warn().Err(err).
-			Str("task_id", task.ID.String()).
-			Str("runner_id", runner.DeviceID).
-			Msg("Failed to send webhook notification but continuing")
-	}
-
-	return nil
+	return s.sendWebhookNotification(ctx, runner, task)
 }
 
 func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *models.Runner, task *models.Task) error {
@@ -758,9 +667,6 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 	var taskConfig map[string]interface{}
 	if task.Config != nil {
 		if err := json.Unmarshal(task.Config, &taskConfig); err != nil {
-			log.Error().Err(err).
-				Str("task_id", task.ID.String()).
-				Msg("Failed to unmarshal task config")
 			return fmt.Errorf("failed to unmarshal task config: %w", err)
 		}
 	}
@@ -798,11 +704,6 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 		return fmt.Errorf("failed to marshal webhook payload: %w", err)
 	}
 
-	log.Info().
-		Str("task_id", task.ID.String()).
-		Str("runner_id", runner.DeviceID).
-		Msg("Sending webhook notification")
-
 	req, err := http.NewRequestWithContext(ctx, "POST", runner.Webhook, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return fmt.Errorf("failed to create webhook request: %w", err)
@@ -821,19 +722,22 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send webhook request: %w", err)
+		log.Warn().Err(err).
+			Str("runner_id", runner.DeviceID).
+			Msg("Failed to send webhook request")
+		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("webhook notification failed with status %d: %s", resp.StatusCode, string(body))
+		log.Warn().
+			Int("status", resp.StatusCode).
+			Str("body", string(body)).
+			Str("runner_id", runner.DeviceID).
+			Msg("Webhook notification failed")
+		return nil
 	}
-
-	log.Debug().
-		Str("task_id", task.ID.String()).
-		Str("runner_id", runner.DeviceID).
-		Msg("Webhook notification sent successfully")
 
 	return nil
 }
@@ -883,7 +787,7 @@ func (s *TaskService) MonitorTasks() {
 			return
 		case <-ticker.C:
 			if err := s.checkStalledTasks(); err != nil {
-				log.Error().Err(err).Msg("Error checking stalled tasks")
+				log.Error().Err(err).Msg("Failed to check stalled tasks")
 			}
 		}
 	}
@@ -899,11 +803,6 @@ func (s *TaskService) checkStalledTasks() error {
 
 	for _, task := range tasks {
 		if task.UpdatedAt.Add(5 * time.Minute).Before(time.Now()) {
-			log.Warn().
-				Str("task_id", task.ID.String()).
-				Time("last_update", task.UpdatedAt).
-				Msg("Task appears to be stalled")
-
 			if err := s.handleStalledTask(task); err != nil {
 				log.Error().Err(err).
 					Str("task_id", task.ID.String()).
@@ -920,10 +819,6 @@ func (s *TaskService) handleStalledTask(task *models.Task) error {
 
 	runner, err := s.runnerService.GetRunner(context.Background(), task.RunnerID)
 	if err != nil {
-		log.Error().Err(err).
-			Str("task_id", task.ID.String()).
-			Str("runner_id", task.RunnerID).
-			Msg("Failed to get runner info")
 		return err
 	}
 
@@ -943,11 +838,6 @@ func (s *TaskService) handleStalledTask(task *models.Task) error {
 	if err := s.repo.Update(context.Background(), task); err != nil {
 		return fmt.Errorf("failed to reset task status: %w", err)
 	}
-
-	log.Info().
-		Str("task_id", task.ID.String()).
-		Str("runner_id", runner.DeviceID).
-		Msg("Reset stalled task to pending status")
 
 	return nil
 }

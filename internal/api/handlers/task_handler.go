@@ -105,12 +105,9 @@ func (h *TaskHandler) RegisterWebhook(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(map[string]string{
+	json.NewEncoder(w).Encode(map[string]string{
 		"id": fmt.Sprintf("%d", runner.ID),
-	}); err != nil {
-		log := gologger.Get()
-		log.Error().Err(err).Str("webhook_id", fmt.Sprintf("%d", runner.ID)).Msg("Failed to encode webhook registration response")
-	}
+	})
 }
 
 func (h *TaskHandler) UnregisterWebhook(w http.ResponseWriter, r *http.Request) {
@@ -160,15 +157,13 @@ func (h *TaskHandler) GetTaskResult(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
-	log := gologger.Get()
-	log.Info().Msg("Creating task")
-
+	log := gologger.WithComponent("task_handler")
 	contentType := r.Header.Get("Content-Type")
 	var req CreateTaskRequest
 	var dockerImage []byte
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
 			log.Error().Err(err).Msg("Failed to parse multipart form")
 			http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
 			return
@@ -180,10 +175,8 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Debug().Str("task_data", taskData).Msg("Received task data")
-
 		if err := json.Unmarshal([]byte(taskData), &req); err != nil {
-			log.Error().Err(err).Str("task_data", taskData).Msg("Failed to unmarshal task data")
+			log.Error().Err(err).Msg("Failed to unmarshal task data")
 			http.Error(w, "Invalid task data", http.StatusBadRequest)
 			return
 		}
@@ -193,10 +186,6 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		file, header, err := r.FormFile("image")
 		if err == nil {
 			defer file.Close()
-			log.Info().
-				Str("filename", header.Filename).
-				Int64("size", header.Size).
-				Msg("Processing Docker image file")
 
 			dockerImage, err = io.ReadAll(file)
 			if err != nil {
@@ -207,8 +196,8 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 			imageURL, err := h.s3Service.UploadDockerImage(r.Context(), dockerImage, strings.TrimSuffix(header.Filename, ".tar"))
 			if err != nil {
-				log.Error().Err(err).Msg("Failed to upload Docker image to S3")
-				http.Error(w, "Failed to upload Docker image to S3", http.StatusInternalServerError)
+				log.Error().Err(err).Msg("Failed to upload Docker image")
+				http.Error(w, "Failed to upload Docker image", http.StatusInternalServerError)
 				return
 			}
 
@@ -238,7 +227,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			log.Error().Err(err).Msg("Failed to decode request body")
+			log.Error().Err(err).Msg("Failed to decode request")
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
@@ -318,11 +307,6 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nonce := utils.GenerateNonce()
-
-	log.Debug().
-		Str("nonce", nonce).
-		Msg("Generated nonce")
-
 	task := models.NewTask()
 	task.Title = req.Title
 	task.Description = req.Description
@@ -333,17 +317,8 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	task.CreatorAddress = creatorAddress
 	task.Nonce = nonce
 
-	log.Debug().
-		Str("task_id", task.ID.String()).
-		Str("creator_device_id", task.CreatorDeviceID).
-		Str("creator_address", task.CreatorAddress).
-		Str("nonce", task.Nonce).
-		Msg("Creating task")
-
 	if err := h.checkStakeBalance(task); err != nil {
-		log.Error().Err(err).
-			Str("device_id", deviceID).
-			Msg("Insufficient stake balance for task reward")
+		log.Error().Err(err).Str("device_id", deviceID).Msg("Insufficient stake balance")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -358,14 +333,12 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(task); err != nil {
-		log.Error().Err(err).Msg("Failed to encode task response")
-	}
+	json.NewEncoder(w).Encode(task)
 }
 
 func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	log := gologger.WithComponent("task_start")
+	log := gologger.WithComponent("task_handler")
 
 	vars := mux.Vars(r)
 	taskID := vars["id"]
@@ -388,7 +361,6 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if task.Status == models.TaskStatusCompleted {
-		log.Warn().Str("task_id", taskID).Msg("Cannot start already completed task")
 		http.Error(w, "Task is already completed", http.StatusConflict)
 		return
 	}
@@ -402,17 +374,9 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 
 	if task.Status == models.TaskStatusRunning {
 		if runner.TaskID != nil && *runner.TaskID == task.ID {
-			log.Info().
-				Str("task_id", taskID).
-				Str("runner_id", runnerID).
-				Msg("Task already assigned to this runner and running")
 			w.WriteHeader(http.StatusOK)
 			return
 		} else {
-			log.Warn().
-				Str("task_id", taskID).
-				Str("runner_id", runnerID).
-				Msg("Task is already running by another runner")
 			http.Error(w, "Task is already assigned to a different runner", http.StatusConflict)
 			return
 		}
@@ -421,10 +385,6 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 	if task.Status == models.TaskStatusPending {
 		if err := h.service.AssignTaskToRunner(ctx, taskID, runnerID); err != nil {
 			if err.Error() == "task unavailable" {
-				log.Warn().
-					Str("task_id", taskID).
-					Str("runner_id", runnerID).
-					Msg("Task is unavailable for assignment")
 				http.Error(w, "Task is unavailable for assignment", http.StatusConflict)
 				return
 			}
@@ -447,7 +407,6 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 	if task.Status != models.TaskStatusRunning {
 		if err := h.service.StartTask(ctx, taskID); err != nil {
 			if err.Error() == "task already completed" {
-				log.Warn().Str("task_id", taskID).Msg("Cannot start already completed task")
 				http.Error(w, "Task is already completed", http.StatusConflict)
 				return
 			}
@@ -457,11 +416,6 @@ func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
-	log.Info().
-		Str("task_id", taskID).
-		Str("runner_id", runnerID).
-		Msg("Task started successfully")
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -473,7 +427,6 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 	deviceID := r.Header.Get("X-Device-ID")
 
 	if deviceID == "" {
-		log.Debug().Str("task", taskID).Msg("Missing device ID")
 		http.Error(w, "Device ID required", http.StatusBadRequest)
 		return
 	}
@@ -483,36 +436,24 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 		log.Error().Err(err).
 			Str("task", taskID).
 			Str("device", deviceID).
-			Msg("Task fetch failed")
+			Msg("Failed to get task")
 		http.Error(w, "Task fetch failed", http.StatusInternalServerError)
 		return
 	}
 
 	if task == nil {
-		log.Debug().
-			Str("task", taskID).
-			Str("device", deviceID).
-			Msg("Task not found")
 		http.Error(w, "Task not found", http.StatusNotFound)
 		return
 	}
 
 	var result models.TaskResult
 	if err := json.NewDecoder(r.Body).Decode(&result); err != nil {
-		log.Debug().Err(err).
-			Str("task", taskID).
-			Str("device", deviceID).
-			Msg("Invalid result payload")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	taskUUID, err := uuid.Parse(taskID)
 	if err != nil {
-		log.Debug().
-			Str("task", taskID).
-			Str("device", deviceID).
-			Msg("Invalid task ID")
 		http.Error(w, "Invalid task ID", http.StatusBadRequest)
 		return
 	}
@@ -524,34 +465,17 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 
 	if task.CreatorAddress == "" {
 		result.CreatorAddress = task.CreatorDeviceID
-		log.Debug().
-			Str("task", taskID).
-			Str("creator_device", task.CreatorDeviceID).
-			Msg("Using creator device ID as temporary creator address")
 	} else {
 		result.CreatorAddress = task.CreatorAddress
 	}
 
 	result.RunnerAddress = deviceID
 	result.CreatedAt = time.Now()
-
 	result.DeviceIDHash = utils.HashDeviceID(deviceID)
 	result.Clean()
 
-	log.Info().
-		Str("task", taskID).
-		Str("creator_address", result.CreatorAddress).
-		Str("creator_device", result.CreatorDeviceID).
-		Str("solver_device", result.SolverDeviceID).
-		Str("runner_address", result.RunnerAddress).
-		Msg("Saving task result")
-
 	if err := h.service.SaveTaskResult(r.Context(), &result); err != nil {
 		if strings.Contains(err.Error(), "invalid task result:") {
-			log.Info().Err(err).
-				Str("task", taskID).
-				Str("error", err.Error()).
-				Msg("Invalid result")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -560,14 +484,7 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Info().
-		Str("task", taskID).
-		Str("creator_device", task.CreatorDeviceID).
-		Str("solver_device", deviceID).
-		Msg("Task result saved")
-
 	h.NotifyTaskUpdate()
-
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -793,7 +710,7 @@ func (h *TaskHandler) RegisterRunner(w http.ResponseWriter, r *http.Request) {
 	log := gologger.WithComponent("task_handler")
 
 	if err := json.NewDecoder(r.Body).Decode(&registerRequest); err != nil {
-		log.Error().Err(err).Msg("Failed to decode register runner request")
+		log.Error().Err(err).Msg("Failed to decode register request")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -827,19 +744,9 @@ func (h *TaskHandler) RegisterRunner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Info().
-		Str("device_id", runner.DeviceID).
-		Str("wallet_address", runner.WalletAddress).
-		Str("status", string(runner.Status)).
-		Str("webhook", runner.Webhook).
-		Msg("Runner registered successfully")
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(savedRunner); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-		return
-	}
+	json.NewEncoder(w).Encode(savedRunner)
 }
 
 func (h *TaskHandler) RunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
@@ -892,12 +799,6 @@ func (h *TaskHandler) RunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to update runner status: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	log.Debug().
-		Str("device_id", heartbeat.DeviceID).
-		Str("status", string(heartbeat.Status)).
-		Int64("timestamp", heartbeat.Timestamp).
-		Msg("Runner heartbeat received")
 
 	w.WriteHeader(http.StatusOK)
 }
