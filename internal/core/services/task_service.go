@@ -502,6 +502,15 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		}()
 	}
 
+	// Check for pending tasks to assign to this runner immediately
+	go func() {
+		if err := s.checkAndAssignPendingTasksToRunner(context.Background(), runnerID); err != nil {
+			log.Error().Err(err).
+				Str("runner_id", runnerID).
+				Msg("Failed to check and assign pending tasks to runner")
+		}
+	}()
+
 	return nil
 }
 
@@ -524,9 +533,10 @@ func (s *TaskService) StopMonitoring() {
 
 func (s *TaskService) MonitorPendingTasks() {
 	log := gologger.WithComponent("task_service")
-	log.Info().Msg("Starting pending tasks monitoring")
+	log.Info().Msg("Starting pending tasks monitoring (backup mechanism)")
 
-	ticker := time.NewTicker(30 * time.Second)
+	// this is a backup mechanism to ensure that pending tasks are assigned to runners
+	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	// Run immediately on start
@@ -540,7 +550,7 @@ func (s *TaskService) MonitorPendingTasks() {
 			log.Info().Msg("Stopping pending tasks monitoring")
 			return
 		case <-ticker.C:
-			log.Debug().Msg("Running pending tasks check")
+			log.Debug().Msg("Running backup pending tasks check")
 			if err := s.processPendingTasks(); err != nil {
 				log.Error().Err(err).Msg("Error processing pending tasks")
 			}
@@ -918,6 +928,52 @@ func (s *TaskService) handleStalledTask(task *models.Task) error {
 		Str("task_id", task.ID.String()).
 		Str("runner_id", runner.DeviceID).
 		Msg("Reset stalled task to pending status")
+
+	return nil
+}
+
+func (s *TaskService) checkAndAssignPendingTasksToRunner(ctx context.Context, runnerID string) error {
+	log := gologger.WithComponent("task_service")
+
+	runner, err := s.runnerService.GetRunner(ctx, runnerID)
+	if err != nil {
+		return fmt.Errorf("failed to get runner: %w", err)
+	}
+
+	if runner.Status != models.RunnerStatusOnline || runner.TaskID != nil {
+		return nil
+	}
+
+	pendingTasks, err := s.repo.ListByStatus(ctx, models.TaskStatusPending)
+	if err != nil {
+		return fmt.Errorf("failed to list pending tasks: %w", err)
+	}
+
+	if len(pendingTasks) == 0 {
+		return nil
+	}
+
+	log.Info().
+		Str("runner_id", runnerID).
+		Int("pending_tasks", len(pendingTasks)).
+		Msg("Checking pending tasks for runner")
+
+	for _, task := range pendingTasks {
+		if isRunnerCompatibleWithTask(runner) {
+			if err := s.assignTaskToRunner(ctx, task, runner); err != nil {
+				log.Error().Err(err).
+					Str("task_id", task.ID.String()).
+					Str("runner_id", runner.DeviceID).
+					Msg("Failed to assign task to runner")
+				continue
+			}
+			log.Info().
+				Str("task_id", task.ID.String()).
+				Str("runner_id", runner.DeviceID).
+				Msg("Successfully assigned pending task to runner")
+			return nil
+		}
+	}
 
 	return nil
 }
