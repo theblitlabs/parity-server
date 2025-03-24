@@ -361,8 +361,14 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		return fmt.Errorf("task is not in a valid status: %s", task.Status)
 	}
 
-	// Store the RunnerID before clearing it from the runner
+	// Get the runner ID from multiple possible sources to ensure we have it
 	runnerID := task.RunnerID
+	if runnerID == "" {
+		runnerID = result.DeviceID // Try device ID from result
+	}
+	if runnerID == "" {
+		runnerID = result.SolverDeviceID // Try solver device ID from result
+	}
 
 	// Store the RunnerID in the task result's device fields if not already set
 	if result.DeviceID == "" {
@@ -372,7 +378,7 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		result.SolverDeviceID = runnerID
 	}
 
-	// First, clear the runner's TaskID
+	// First, clear the runner's TaskID - this must happen before any other operations
 	if runnerID != "" {
 		log.Info().
 			Str("task_id", result.TaskID.String()).
@@ -394,22 +400,33 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 
 			// Clear the TaskID and update the runner immediately
 			runner.TaskID = nil
-			if _, err := s.runnerService.UpdateRunner(ctx, runner); err != nil {
+			runner.Status = models.RunnerStatusOnline // Ensure runner stays online
+			updatedRunner, err := s.runnerService.UpdateRunner(ctx, runner)
+			if err != nil {
 				log.Error().Err(err).
 					Str("task_id", result.TaskID.String()).
 					Str("runner_id", runnerID).
 					Msg("Failed to clear runner TaskID")
 			} else {
-				log.Info().
-					Str("task_id", result.TaskID.String()).
-					Str("runner_id", runnerID).
-					Msg("Successfully cleared runner TaskID after task completion")
+				if updatedRunner.TaskID != nil {
+					log.Error().
+						Str("task_id", result.TaskID.String()).
+						Str("runner_id", runnerID).
+						Interface("task_id_after_update", updatedRunner.TaskID).
+						Msg("Runner TaskID not cleared properly")
+				} else {
+					log.Info().
+						Str("task_id", result.TaskID.String()).
+						Str("runner_id", runnerID).
+						Msg("Successfully cleared runner TaskID after task completion")
+				}
 			}
 		}
 	} else {
 		log.Warn().
 			Str("task_id", result.TaskID.String()).
-			Msg("No runner ID associated with completed task")
+			Msg("No runner ID found in task or result")
+		return fmt.Errorf("no runner ID found to clear TaskID")
 	}
 
 	// Calculate reward
@@ -424,7 +441,7 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 	reward := s.rewardCalculator.CalculateReward(metrics)
 	result.Reward = reward
 
-	// Then, save the task result and update task status
+	// Save the task result and update task status
 	if err := s.repo.SaveTaskResult(ctx, result); err != nil {
 		log.Error().Err(err).
 			Str("task_id", result.TaskID.String()).
@@ -454,14 +471,35 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		}
 	}
 
-	// Finally, process rewards
-	if s.rewardClient != nil {
-		if err := s.rewardClient.DistributeRewards(result); err != nil {
+	// Double-check that the runner's TaskID is cleared
+	runner, err := s.runnerService.GetRunner(ctx, runnerID)
+	if err == nil && runner.TaskID != nil {
+		log.Warn().
+			Str("task_id", result.TaskID.String()).
+			Str("runner_id", runnerID).
+			Interface("task_id_after_completion", runner.TaskID).
+			Msg("Runner still has TaskID after completion, attempting to clear again")
+
+		runner.TaskID = nil
+		runner.Status = models.RunnerStatusOnline
+		if _, err := s.runnerService.UpdateRunner(ctx, runner); err != nil {
 			log.Error().Err(err).
 				Str("task_id", result.TaskID.String()).
-				Float64("reward", result.Reward).
-				Msg("Failed to distribute rewards")
+				Str("runner_id", runnerID).
+				Msg("Failed to clear runner TaskID in final check")
 		}
+	}
+
+	// Process rewards in a goroutine to not block task assignment
+	if s.rewardClient != nil {
+		go func() {
+			if err := s.rewardClient.DistributeRewards(result); err != nil {
+				log.Error().Err(err).
+					Str("task_id", result.TaskID.String()).
+					Float64("reward", result.Reward).
+					Msg("Failed to distribute rewards")
+			}
+		}()
 	}
 
 	return nil
@@ -578,7 +616,6 @@ func (s *TaskService) processPendingTasks() error {
 				Str("task_id", task.ID.String()).
 				Str("runner_id", runner.DeviceID).
 				Str("runner_status", string(runner.Status)).
-				Bool("has_task", runner.TaskID != nil).
 				Msg("Checking runner compatibility")
 
 			if isRunnerCompatibleWithTask(runner) {
@@ -785,6 +822,14 @@ func isRunnerCompatibleWithTask(runner *models.Runner) bool {
 			Str("runner_id", runner.DeviceID).
 			Str("status", string(runner.Status)).
 			Msg("Runner not compatible: not online")
+		return false
+	}
+
+	if runner.TaskID != nil {
+		log.Info().
+			Str("runner_id", runner.DeviceID).
+			Interface("task_id", runner.TaskID).
+			Msg("Runner not compatible: has task assigned")
 		return false
 	}
 
