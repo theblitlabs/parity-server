@@ -106,7 +106,7 @@ func (s *TaskService) CreateTask(ctx context.Context, task *models.Task) error {
 
 			// Try to assign the task to the first compatible runner
 			for _, runner := range availableRunners {
-				if isRunnerCompatibleWithTask(runner, task) {
+				if isRunnerCompatibleWithTask(runner) {
 					if err := s.assignTaskToRunner(ctx, task, runner); err != nil {
 						log.Error().Err(err).
 							Str("task_id", task.ID.String()).
@@ -361,6 +361,58 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		return fmt.Errorf("task is not in a valid status: %s", task.Status)
 	}
 
+	// Store the RunnerID before clearing it from the runner
+	runnerID := task.RunnerID
+
+	// Store the RunnerID in the task result's device fields if not already set
+	if result.DeviceID == "" {
+		result.DeviceID = runnerID
+	}
+	if result.SolverDeviceID == "" {
+		result.SolverDeviceID = runnerID
+	}
+
+	// First, clear the runner's TaskID
+	if runnerID != "" {
+		log.Info().
+			Str("task_id", result.TaskID.String()).
+			Str("runner_id", runnerID).
+			Msg("Attempting to clear runner TaskID")
+
+		runner, err := s.runnerService.GetRunner(ctx, runnerID)
+		if err != nil {
+			log.Error().Err(err).
+				Str("task_id", result.TaskID.String()).
+				Str("runner_id", runnerID).
+				Msg("Failed to get runner info for clearing TaskID")
+		} else {
+			log.Info().
+				Str("task_id", result.TaskID.String()).
+				Str("runner_id", runnerID).
+				Interface("current_task_id", runner.TaskID).
+				Msg("Found runner, clearing TaskID")
+
+			// Clear the TaskID and update the runner immediately
+			runner.TaskID = nil
+			if _, err := s.runnerService.UpdateRunner(ctx, runner); err != nil {
+				log.Error().Err(err).
+					Str("task_id", result.TaskID.String()).
+					Str("runner_id", runnerID).
+					Msg("Failed to clear runner TaskID")
+			} else {
+				log.Info().
+					Str("task_id", result.TaskID.String()).
+					Str("runner_id", runnerID).
+					Msg("Successfully cleared runner TaskID after task completion")
+			}
+		}
+	} else {
+		log.Warn().
+			Str("task_id", result.TaskID.String()).
+			Msg("No runner ID associated with completed task")
+	}
+
+	// Calculate reward
 	metrics := ports.ResourceMetrics{
 		CPUSeconds:      result.CPUSeconds,
 		EstimatedCycles: result.EstimatedCycles,
@@ -372,6 +424,7 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 	reward := s.rewardCalculator.CalculateReward(metrics)
 	result.Reward = reward
 
+	// Then, save the task result and update task status
 	if err := s.repo.SaveTaskResult(ctx, result); err != nil {
 		log.Error().Err(err).
 			Str("task_id", result.TaskID.String()).
@@ -382,6 +435,7 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 	if task.Status != models.TaskStatusCompleted {
 		task.Status = models.TaskStatusCompleted
 		task.UpdatedAt = time.Now()
+		task.RunnerID = runnerID // Preserve the RunnerID
 
 		if task.CompletedAt == nil {
 			now := time.Now()
@@ -395,10 +449,12 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		} else {
 			log.Info().
 				Str("task_id", result.TaskID.String()).
+				Str("runner_id", runnerID).
 				Msg("Task marked as completed after receiving results")
 		}
 	}
 
+	// Finally, process rewards
 	if s.rewardClient != nil {
 		if err := s.rewardClient.DistributeRewards(result); err != nil {
 			log.Error().Err(err).
@@ -435,12 +491,18 @@ func (s *TaskService) MonitorPendingTasks() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
+	// Run immediately on start
+	if err := s.processPendingTasks(); err != nil {
+		log.Error().Err(err).Msg("Error processing pending tasks on startup")
+	}
+
 	for {
 		select {
 		case <-s.stopChan:
 			log.Info().Msg("Stopping pending tasks monitoring")
 			return
 		case <-ticker.C:
+			log.Debug().Msg("Running pending tasks check")
 			if err := s.processPendingTasks(); err != nil {
 				log.Error().Err(err).Msg("Error processing pending tasks")
 			}
@@ -457,6 +519,10 @@ func (s *TaskService) processPendingTasks() error {
 		return fmt.Errorf("failed to list pending tasks: %w", err)
 	}
 
+	log.Info().
+		Int("pending_tasks_count", len(pendingTasks)).
+		Msg("Found pending tasks")
+
 	if len(pendingTasks) == 0 {
 		return nil
 	}
@@ -467,17 +533,30 @@ func (s *TaskService) processPendingTasks() error {
 		return fmt.Errorf("failed to list available runners: %w", err)
 	}
 
+	log.Info().
+		Int("online_runners_count", len(runners)).
+		Msg("Found online runners")
+
 	if len(runners) == 0 {
 		return nil
 	}
 
-	// Filter out runners that are already assigned tasks
+	// Filter out runners that are not online
 	availableRunners := make([]*models.Runner, 0)
 	for _, runner := range runners {
-		if runner.TaskID == nil {
+		if runner.Status == models.RunnerStatusOnline {
 			availableRunners = append(availableRunners, runner)
+		} else {
+			log.Debug().
+				Str("runner_id", runner.DeviceID).
+				Str("status", string(runner.Status)).
+				Msg("Runner is not online")
 		}
 	}
+
+	log.Info().
+		Int("available_runners_count", len(availableRunners)).
+		Msg("Found available runners after filtering")
 
 	if len(availableRunners) == 0 {
 		return nil
@@ -487,8 +566,22 @@ func (s *TaskService) processPendingTasks() error {
 
 	// Try to assign each pending task to available runners
 	for _, task := range pendingTasks {
+		log.Info().
+			Str("task_id", task.ID.String()).
+			Str("task_status", string(task.Status)).
+			Str("task_type", string(task.Type)).
+			Msg("Attempting to assign task")
+
+		assigned := false
 		for _, runner := range availableRunners {
-			if isRunnerCompatibleWithTask(runner, task) {
+			log.Info().
+				Str("task_id", task.ID.String()).
+				Str("runner_id", runner.DeviceID).
+				Str("runner_status", string(runner.Status)).
+				Bool("has_task", runner.TaskID != nil).
+				Msg("Checking runner compatibility")
+
+			if isRunnerCompatibleWithTask(runner) {
 				if err := s.assignTaskToRunner(context.Background(), task, runner); err != nil {
 					log.Error().Err(err).
 						Str("task_id", task.ID.String()).
@@ -503,8 +596,20 @@ func (s *TaskService) processPendingTasks() error {
 						break
 					}
 				}
+				assigned = true
 				break
+			} else {
+				log.Info().
+					Str("task_id", task.ID.String()).
+					Str("runner_id", runner.DeviceID).
+					Msg("Runner not compatible with task")
 			}
+		}
+
+		if !assigned {
+			log.Info().
+				Str("task_id", task.ID.String()).
+				Msg("No compatible runners found for task")
 		}
 	}
 
@@ -629,7 +734,6 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 	log.Info().
 		Str("task_id", task.ID.String()).
 		Str("runner_id", runner.DeviceID).
-		RawJSON("payload", payloadBytes).
 		Msg("Sending webhook notification")
 
 	req, err := http.NewRequestWithContext(ctx, "POST", runner.Webhook, bytes.NewReader(payloadBytes))
@@ -669,21 +773,24 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 
 func sortRunnersByLoad(runners []*models.Runner) {
 	sort.Slice(runners, func(i, j int) bool {
-		if runners[i].TaskID == nil && runners[j].TaskID != nil {
-			return true
-		}
-		if runners[i].TaskID != nil && runners[j].TaskID == nil {
-			return false
-		}
-		return true
+		return true // Simple round-robin for now
 	})
 }
 
-func isRunnerCompatibleWithTask(runner *models.Runner, task *models.Task) bool {
-	if runner.Status != models.RunnerStatusOnline || runner.TaskID != nil {
+func isRunnerCompatibleWithTask(runner *models.Runner) bool {
+	log := gologger.WithComponent("task_service")
+
+	if runner.Status != models.RunnerStatusOnline {
+		log.Info().
+			Str("runner_id", runner.DeviceID).
+			Str("status", string(runner.Status)).
+			Msg("Runner not compatible: not online")
 		return false
 	}
 
+	log.Info().
+		Str("runner_id", runner.DeviceID).
+		Msg("Runner is compatible with task")
 	return true
 }
 

@@ -232,38 +232,10 @@ func (sb *ServerBuilder) InitTaskMonitoring() *ServerBuilder {
 	}
 
 	sb.monitorCtx, sb.monitorCancel = context.WithCancel(context.Background())
+	sb.monitorWg = &sync.WaitGroup{}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	cfg, err := config.GetConfigManager().GetConfig()
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to load configuration")
-	}
-	go func() {
-		defer wg.Done()
-		ticker := time.NewTicker(time.Duration(cfg.Scheduler.Interval) * time.Second)
-
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-sb.monitorCtx.Done():
-				log := gologger.Get()
-				log.Info().Msg("Task monitoring goroutine stopped")
-				return
-			case <-ticker.C:
-				select {
-				case <-sb.monitorCtx.Done():
-					return
-				default:
-					sb.taskService.MonitorTasks()
-				}
-			}
-		}
-	}()
-
-	sb.monitorWg = &wg
+	log.Info().Msg("Starting task monitoring services")
+	sb.taskService.StartMonitoring()
 
 	return sb
 }
