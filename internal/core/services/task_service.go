@@ -42,6 +42,8 @@ type TaskService struct {
 	nonceService           *NonceService
 	runnerService          *RunnerService
 	notificationInProgress sync.Map // Used to track in-progress notifications
+	stopChan               chan struct{}
+	wg                     sync.WaitGroup
 }
 
 func NewTaskService(repo TaskRepository, rewardCalculator ports.RewardCalculator, runnerService *RunnerService) *TaskService {
@@ -50,6 +52,7 @@ func NewTaskService(repo TaskRepository, rewardCalculator ports.RewardCalculator
 		rewardCalculator: rewardCalculator,
 		nonceService:     NewNonceService(),
 		runnerService:    runnerService,
+		stopChan:         make(chan struct{}),
 	}
 }
 
@@ -90,8 +93,29 @@ func (s *TaskService) CreateTask(ctx context.Context, task *models.Task) error {
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to list available runners")
 	} else if len(runners) > 0 {
-		if err := s.assignTasksToRunner([]*models.Task{task}, runners); err != nil {
-			log.Error().Err(err).Str("task_id", task.ID.String()).Msg("Failed to notify runners about new task")
+		// Filter out runners that are already assigned tasks
+		availableRunners := make([]*models.Runner, 0)
+		for _, runner := range runners {
+			if runner.TaskID == nil {
+				availableRunners = append(availableRunners, runner)
+			}
+		}
+
+		if len(availableRunners) > 0 {
+			sortRunnersByLoad(availableRunners)
+
+			// Try to assign the task to the first compatible runner
+			for _, runner := range availableRunners {
+				if isRunnerCompatibleWithTask(runner, task) {
+					if err := s.assignTaskToRunner(ctx, task, runner); err != nil {
+						log.Error().Err(err).
+							Str("task_id", task.ID.String()).
+							Str("runner_id", runner.DeviceID).
+							Msg("Failed to assign task to runner")
+					}
+					break
+				}
+			}
 		}
 	}
 
@@ -191,17 +215,7 @@ func (s *TaskService) AssignTaskToRunner(ctx context.Context, taskID string, dev
 		return errors.New("invalid docker config")
 	}
 
-	err = s.assignTasksToRunner([]*models.Task{task}, []*models.Runner{runner})
-	if err != nil {
-		log.Error().
-			Err(err).
-			Str("task_id", taskID).
-			Str("runner_id", deviceID).
-			Msg("Failed to assign task to runner")
-		return err
-	}
-
-	return nil
+	return s.assignTaskToRunner(ctx, task, runner)
 }
 
 func (s *TaskService) GetTaskReward(ctx context.Context, taskID string) (float64, error) {
@@ -397,122 +411,138 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 	return nil
 }
 
-func (s *TaskService) MonitorTasks() {
-	log := gologger.WithComponent("task_service")
-	log.Info().Msg("Starting task monitoring")
+func (s *TaskService) StartMonitoring() {
+	s.wg.Add(2)
+	go func() {
+		defer s.wg.Done()
+		s.MonitorTasks()
+	}()
+	go func() {
+		defer s.wg.Done()
+		s.MonitorPendingTasks()
+	}()
+}
 
-	ticker := time.NewTicker(1 * time.Minute)
+func (s *TaskService) StopMonitoring() {
+	close(s.stopChan)
+	s.wg.Wait()
+}
+
+func (s *TaskService) MonitorPendingTasks() {
+	log := gologger.WithComponent("task_service")
+	log.Info().Msg("Starting pending tasks monitoring")
+
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case <-s.stopChan:
+			log.Info().Msg("Stopping pending tasks monitoring")
+			return
 		case <-ticker.C:
-			tasks, err := s.repo.ListByStatus(context.Background(), models.TaskStatusRunning)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to list running tasks")
-				continue
-			}
-
-			for _, task := range tasks {
-				if task.UpdatedAt.Add(5 * time.Minute).Before(time.Now()) {
-					log.Warn().
-						Str("task_id", task.ID.String()).
-						Time("last_update", task.UpdatedAt).
-						Msg("Task appears to be stalled")
-
-					runner, err := s.runnerService.GetRunner(context.Background(), task.RunnerID)
-					if err != nil {
-						log.Error().Err(err).
-							Str("task_id", task.ID.String()).
-							Str("runner_id", task.RunnerID).
-							Msg("Failed to get runner info")
-						continue
-					}
-
-					runner.Status = models.RunnerStatusOffline
-					runner.TaskID = nil
-					if _, err := s.runnerService.UpdateRunner(context.Background(), runner); err != nil {
-						log.Error().Err(err).
-							Str("runner_id", runner.DeviceID).
-							Msg("Failed to update runner status")
-					}
-
-					task.Status = models.TaskStatusPending
-					task.RunnerID = ""
-					task.UpdatedAt = time.Now()
-
-					if err := s.repo.Update(context.Background(), task); err != nil {
-						log.Error().Err(err).
-							Str("task_id", task.ID.String()).
-							Msg("Failed to reset task status")
-						continue
-					}
-
-					log.Info().
-						Str("task_id", task.ID.String()).
-						Str("runner_id", runner.DeviceID).
-						Msg("Reset stalled task to pending status")
-				}
+			if err := s.processPendingTasks(); err != nil {
+				log.Error().Err(err).Msg("Error processing pending tasks")
 			}
 		}
 	}
 }
 
-func (s *TaskService) assignTasksToRunner(tasks []*models.Task, runners []*models.Runner) error {
+func (s *TaskService) processPendingTasks() error {
 	log := gologger.WithComponent("task_service")
 
-	sortRunnersByLoad(runners)
+	// Get all pending tasks
+	pendingTasks, err := s.repo.ListByStatus(context.Background(), models.TaskStatusPending)
+	if err != nil {
+		return fmt.Errorf("failed to list pending tasks: %w", err)
+	}
 
-	for _, task := range tasks {
-		var assignedRunner *models.Runner
-		for _, runner := range runners {
+	if len(pendingTasks) == 0 {
+		return nil
+	}
+
+	// Get all available runners
+	runners, err := s.runnerService.ListRunnersByStatus(context.Background(), models.RunnerStatusOnline)
+	if err != nil {
+		return fmt.Errorf("failed to list available runners: %w", err)
+	}
+
+	if len(runners) == 0 {
+		return nil
+	}
+
+	// Filter out runners that are already assigned tasks
+	availableRunners := make([]*models.Runner, 0)
+	for _, runner := range runners {
+		if runner.TaskID == nil {
+			availableRunners = append(availableRunners, runner)
+		}
+	}
+
+	if len(availableRunners) == 0 {
+		return nil
+	}
+
+	sortRunnersByLoad(availableRunners)
+
+	// Try to assign each pending task to available runners
+	for _, task := range pendingTasks {
+		for _, runner := range availableRunners {
 			if isRunnerCompatibleWithTask(runner, task) {
-				assignedRunner = runner
+				if err := s.assignTaskToRunner(context.Background(), task, runner); err != nil {
+					log.Error().Err(err).
+						Str("task_id", task.ID.String()).
+						Str("runner_id", runner.DeviceID).
+						Msg("Failed to assign task to runner")
+					continue
+				}
+				// Remove the runner from available runners after assignment
+				for i, r := range availableRunners {
+					if r.DeviceID == runner.DeviceID {
+						availableRunners = append(availableRunners[:i], availableRunners[i+1:]...)
+						break
+					}
+				}
 				break
 			}
 		}
-
-		if assignedRunner == nil {
-			log.Debug().
-				Str("task_id", task.ID.String()).
-				Msg("No compatible runner found for task")
-			continue
-		}
-
-		task.RunnerID = assignedRunner.DeviceID
-		task.UpdatedAt = time.Now()
-
-		if err := s.repo.Update(context.Background(), task); err != nil {
-			log.Error().Err(err).
-				Str("task_id", task.ID.String()).
-				Str("runner_id", assignedRunner.DeviceID).
-				Msg("Failed to update task with runner ID")
-			continue
-		}
-
-		assignedRunner.TaskID = &task.ID
-		if _, err := s.runnerService.UpdateRunner(context.Background(), assignedRunner); err != nil {
-			log.Error().Err(err).
-				Str("task_id", task.ID.String()).
-				Str("runner_id", assignedRunner.DeviceID).
-				Msg("Failed to update runner with task ID")
-
-			task.RunnerID = ""
-			if err := s.repo.Update(context.Background(), task); err != nil {
-				log.Error().Err(err).
-					Str("task_id", task.ID.String()).
-					Msg("Failed to revert task runner ID")
-			}
-			continue
-		}
-
-		if err := s.notifyRunnerAboutTask(assignedRunner, task); err != nil {
-			log.Warn().Err(err).
-				Str("task_id", task.ID.String()).
-				Str("runner_id", assignedRunner.DeviceID).
-				Msg("Failed to notify runner about task, but keeping assignment")
-		}
 	}
+
+	return nil
+}
+
+func (s *TaskService) assignTaskToRunner(ctx context.Context, task *models.Task, runner *models.Runner) error {
+	log := gologger.WithComponent("task_service")
+
+	task.RunnerID = runner.DeviceID
+	task.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(ctx, task); err != nil {
+		return fmt.Errorf("failed to update task with runner ID: %w", err)
+	}
+
+	runner.TaskID = &task.ID
+	if _, err := s.runnerService.UpdateRunner(ctx, runner); err != nil {
+		task.RunnerID = ""
+		if revertErr := s.repo.Update(ctx, task); revertErr != nil {
+			log.Error().Err(revertErr).
+				Str("task_id", task.ID.String()).
+				Msg("Failed to revert task runner ID")
+		}
+		return fmt.Errorf("failed to update runner with task ID: %w", err)
+	}
+
+	if err := s.notifyRunnerAboutTask(runner, task); err != nil {
+		log.Warn().Err(err).
+			Str("task_id", task.ID.String()).
+			Str("runner_id", runner.DeviceID).
+			Msg("Failed to notify runner about task, but keeping assignment")
+	}
+
+	log.Info().
+		Str("task_id", task.ID.String()).
+		Str("runner_id", runner.DeviceID).
+		Msg("Successfully assigned task to runner")
 
 	return nil
 }
@@ -655,4 +685,87 @@ func isRunnerCompatibleWithTask(runner *models.Runner, task *models.Task) bool {
 	}
 
 	return true
+}
+
+func (s *TaskService) MonitorTasks() {
+	log := gologger.WithComponent("task_service")
+	log.Info().Msg("Starting task monitoring")
+
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopChan:
+			log.Info().Msg("Stopping task monitoring")
+			return
+		case <-ticker.C:
+			if err := s.checkStalledTasks(); err != nil {
+				log.Error().Err(err).Msg("Error checking stalled tasks")
+			}
+		}
+	}
+}
+
+func (s *TaskService) checkStalledTasks() error {
+	log := gologger.WithComponent("task_service")
+
+	tasks, err := s.repo.ListByStatus(context.Background(), models.TaskStatusRunning)
+	if err != nil {
+		return fmt.Errorf("failed to list running tasks: %w", err)
+	}
+
+	for _, task := range tasks {
+		if task.UpdatedAt.Add(5 * time.Minute).Before(time.Now()) {
+			log.Warn().
+				Str("task_id", task.ID.String()).
+				Time("last_update", task.UpdatedAt).
+				Msg("Task appears to be stalled")
+
+			if err := s.handleStalledTask(task); err != nil {
+				log.Error().Err(err).
+					Str("task_id", task.ID.String()).
+					Msg("Failed to handle stalled task")
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *TaskService) handleStalledTask(task *models.Task) error {
+	log := gologger.WithComponent("task_service")
+
+	runner, err := s.runnerService.GetRunner(context.Background(), task.RunnerID)
+	if err != nil {
+		log.Error().Err(err).
+			Str("task_id", task.ID.String()).
+			Str("runner_id", task.RunnerID).
+			Msg("Failed to get runner info")
+		return err
+	}
+
+	runner.Status = models.RunnerStatusOffline
+	runner.TaskID = nil
+	if _, err := s.runnerService.UpdateRunner(context.Background(), runner); err != nil {
+		log.Error().Err(err).
+			Str("runner_id", runner.DeviceID).
+			Msg("Failed to update runner status")
+		return err
+	}
+
+	task.Status = models.TaskStatusPending
+	task.RunnerID = ""
+	task.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(context.Background(), task); err != nil {
+		return fmt.Errorf("failed to reset task status: %w", err)
+	}
+
+	log.Info().
+		Str("task_id", task.ID.String()).
+		Str("runner_id", runner.DeviceID).
+		Msg("Reset stalled task to pending status")
+
+	return nil
 }

@@ -270,10 +270,6 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Info().
-		Interface("request", req).
-		Msg("Creating task")
-
 	if req.Title == "" || req.Description == "" {
 		http.Error(w, "Title and description are required", http.StatusBadRequest)
 		return
