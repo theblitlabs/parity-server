@@ -86,6 +86,7 @@ func (h *TaskHandler) NotifyTaskUpdate() {
 }
 
 func (h *TaskHandler) RegisterWebhook(w http.ResponseWriter, r *http.Request) {
+	log := gologger.WithComponent("task_handler")
 	var req services.RegisterWebhookRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -105,9 +106,12 @@ func (h *TaskHandler) RegisterWebhook(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"id": fmt.Sprintf("%d", runner.ID),
-	})
+	}); err != nil {
+		log.Error().Err(err).Msg("Failed to encode response")
+		return
+	}
 }
 
 func (h *TaskHandler) UnregisterWebhook(w http.ResponseWriter, r *http.Request) {
@@ -333,7 +337,10 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(task)
+	if err := json.NewEncoder(w).Encode(task); err != nil {
+		log.Error().Err(err).Msg("Failed to encode task response")
+		return
+	}
 }
 
 func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
@@ -746,7 +753,10 @@ func (h *TaskHandler) RegisterRunner(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(savedRunner)
+	if err := json.NewEncoder(w).Encode(savedRunner); err != nil {
+		log.Error().Err(err).Msg("Failed to encode runner response")
+		return
+	}
 }
 
 func (h *TaskHandler) RunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
