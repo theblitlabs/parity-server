@@ -81,19 +81,33 @@ func (s *TaskService) CreateTask(ctx context.Context, task *models.Task) error {
 	}
 	task.UpdatedAt = time.Now()
 
-	availableRunners, err := s.getAvailableRunners(ctx)
-	if err != nil {
-		return err
-	}
-
 	if err := s.repo.Create(ctx, task); err != nil {
 		return err
 	}
 
-	if len(availableRunners) >= MinRunnersForTask {
-		sortRunnersByLoad(availableRunners)
-		s.assignTaskToRunners(ctx, task, availableRunners, MinRunnersForTask)
-	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		availableRunners, err := s.getAvailableRunners(ctx)
+		if err != nil {
+			log := gologger.WithComponent("task_service")
+			log.Error().Err(err).
+				Str("task_id", task.ID.String()).
+				Msg("Failed to get available runners for new task")
+			return
+		}
+
+		if len(availableRunners) >= MinRunnersForTask {
+			sortRunnersByLoad(availableRunners)
+			if _, _, err := s.assignTaskToRunners(ctx, task, availableRunners, MinRunnersForTask); err != nil {
+				log := gologger.WithComponent("task_service")
+				log.Error().Err(err).
+					Str("task_id", task.ID.String()).
+					Msg("Failed to assign new task to available runners")
+			}
+		}
+	}()
 
 	return nil
 }
@@ -483,14 +497,25 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 }
 
 func (s *TaskService) StartMonitoring() {
-	s.wg.Add(2)
+	log := gologger.WithComponent("task_service")
+	log.Info().Msg("Starting task monitoring services")
+
+	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		s.MonitorTasks()
-	}()
-	go func() {
-		defer s.wg.Done()
-		s.MonitorPendingTasks()
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-s.stopChan:
+				return
+			case <-ticker.C:
+				if err := s.checkStalledTasks(); err != nil {
+					log.Error().Err(err).Msg("Failed to check stalled tasks")
+				}
+			}
+		}
 	}()
 }
 
@@ -499,98 +524,171 @@ func (s *TaskService) StopMonitoring() {
 	s.wg.Wait()
 }
 
-func (s *TaskService) MonitorPendingTasks() {
-	log := gologger.WithComponent("task_service")
-	log.Info().Msg("Starting pending tasks monitoring")
-
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	if err := s.processPendingTasks(); err != nil {
-		log.Error().Err(err).Msg("Failed to process pending tasks")
-	}
-
-	for {
-		select {
-		case <-s.stopChan:
-			log.Info().Msg("Stopping pending tasks monitoring")
-			return
-		case <-ticker.C:
-			if err := s.processPendingTasks(); err != nil {
-				log.Error().Err(err).Msg("Failed to process pending tasks")
-			}
-		}
-	}
-}
-
-func (s *TaskService) processPendingTasks() error {
+func (s *TaskService) checkStalledTasks() error {
 	log := gologger.WithComponent("task_service")
 
-	pendingTasks, err := s.repo.ListByStatus(context.Background(), models.TaskStatusPending)
+	tasks, err := s.repo.ListByStatus(context.Background(), models.TaskStatusRunning)
 	if err != nil {
-		return fmt.Errorf("failed to list pending tasks: %w", err)
+		return fmt.Errorf("failed to list running tasks: %w", err)
 	}
 
-	if len(pendingTasks) == 0 {
-		return nil
-	}
-
-	runners, err := s.runnerService.ListRunnersByStatus(context.Background(), models.RunnerStatusOnline)
-	if err != nil {
-		return fmt.Errorf("failed to list available runners: %w", err)
-	}
-
-	availableRunners, err := s.getAvailableRunners(context.Background())
-	if err != nil {
-		return err
-	}
-
-	if len(availableRunners) < MinRunnersForTask {
-		return nil
-	}
-
-	sortRunnersByLoad(availableRunners)
-
-	for _, task := range pendingTasks {
-		currentAssignedCount := s.countAssignedRunners(task, runners)
-
-		if currentAssignedCount >= MaxRunnersForTask {
-			continue
-		}
-
-		remainingSlots := MaxRunnersForTask - currentAssignedCount
-		targetAssignments := MinRunnersForTask - currentAssignedCount
-		if targetAssignments <= 0 {
-			if len(availableRunners) > MinRunnersForTask {
-				targetAssignments = 1
-			} else {
-				continue
+	for _, task := range tasks {
+		if task.UpdatedAt.Add(5 * time.Minute).Before(time.Now()) {
+			if err := s.handleStalledTask(task); err != nil {
+				log.Error().Err(err).
+					Str("task_id", task.ID.String()).
+					Msg("Failed to handle stalled task")
 			}
-		}
-
-		_, assignedRunnerIDs, err := s.assignTaskToRunners(context.Background(), task, availableRunners, min(targetAssignments, remainingSlots))
-		if err != nil {
-			log.Error().Err(err).
-				Str("task_id", task.ID.String()).
-				Msg("Failed to assign runners to task")
-			continue
-		}
-
-		for _, runnerID := range assignedRunnerIDs {
-			for i, runner := range availableRunners {
-				if runner.DeviceID == runnerID {
-					availableRunners = append(availableRunners[:i], availableRunners[i+1:]...)
-					break
-				}
-			}
-		}
-
-		if len(availableRunners) < MinRunnersForTask {
-			break
 		}
 	}
 
 	return nil
+}
+
+func (s *TaskService) handleStalledTask(task *models.Task) error {
+	log := gologger.WithComponent("task_service")
+
+	runner, err := s.runnerService.GetRunner(context.Background(), task.RunnerID)
+	if err != nil {
+		return err
+	}
+
+	runner.Status = models.RunnerStatusOffline
+	runner.TaskID = nil
+	if _, err := s.runnerService.UpdateRunner(context.Background(), runner); err != nil {
+		log.Error().Err(err).
+			Str("runner_id", runner.DeviceID).
+			Msg("Failed to update runner status")
+		return err
+	}
+
+	task.Status = models.TaskStatusPending
+	task.RunnerID = ""
+	task.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(context.Background(), task); err != nil {
+		return fmt.Errorf("failed to reset task status: %w", err)
+	}
+
+	return nil
+}
+
+func (s *TaskService) checkAndAssignPendingTasksToRunner(ctx context.Context, runnerID string) error {
+	log := gologger.WithComponent("task_service")
+
+	runner, err := s.runnerService.GetRunner(ctx, runnerID)
+	if err != nil {
+		return fmt.Errorf("failed to get runner: %w", err)
+	}
+	if runner.Status != models.RunnerStatusOnline {
+		return nil
+	}
+
+	pendingTasks, err := s.repo.ListByStatus(ctx, models.TaskStatusPending)
+	if err != nil {
+		return fmt.Errorf("failed to list pending tasks: %w", err)
+	}
+
+	sort.Slice(pendingTasks, func(i, j int) bool {
+		return pendingTasks[i].CreatedAt.Before(pendingTasks[j].CreatedAt)
+	})
+
+	for _, task := range pendingTasks {
+		currentRunners, err := s.getAvailableRunners(ctx)
+		if err != nil {
+			log.Error().Err(err).
+				Str("task_id", task.ID.String()).
+				Msg("Failed to get available runners for task")
+			continue
+		}
+
+		assignedCount := s.countAssignedRunners(task, currentRunners)
+		if assignedCount >= MaxRunnersForTask {
+			continue
+		}
+
+		if err := s.assignTaskToRunner(ctx, task, runner); err != nil {
+			log.Error().Err(err).
+				Str("task_id", task.ID.String()).
+				Str("runner_id", runnerID).
+				Msg("Failed to assign pending task to runner")
+			continue
+		}
+
+		log.Info().
+			Str("task_id", task.ID.String()).
+			Str("runner_id", runnerID).
+			Msg("Successfully assigned pending task to runner")
+
+		break
+	}
+
+	return nil
+}
+
+func (s *TaskService) getAvailableRunners(ctx context.Context) ([]*models.Runner, error) {
+	log := gologger.WithComponent("task_service")
+
+	runners, err := s.runnerService.ListRunnersByStatus(ctx, models.RunnerStatusOnline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list online runners: %w", err)
+	}
+
+	availableRunners := make([]*models.Runner, 0)
+	for _, runner := range runners {
+		if runner.Status == models.RunnerStatusOnline && runner.TaskID == nil {
+			availableRunners = append(availableRunners, runner)
+		}
+	}
+
+	log.Info().
+		Int("available_runners_count", len(availableRunners)).
+		Int("min_runners_required", MinRunnersForTask).
+		Int("max_runners_allowed", MaxRunnersForTask).
+		Msg("Found available runners after filtering")
+
+	return availableRunners, nil
+}
+
+func (s *TaskService) countAssignedRunners(task *models.Task, runners []*models.Runner) int {
+	assignedCount := 0
+	for _, r := range runners {
+		if r.TaskID != nil && *r.TaskID == task.ID {
+			assignedCount++
+		}
+	}
+	return assignedCount
+}
+
+func sortRunnersByLoad(runners []*models.Runner) {
+	sort.Slice(runners, func(i, j int) bool {
+		return true // Simple round-robin for now
+	})
+}
+
+func isRunnerCompatibleWithTask(runner *models.Runner) bool {
+	log := gologger.WithComponent("task_service")
+
+	if runner.Status != models.RunnerStatusOnline {
+		log.Info().
+			Str("runner_id", runner.DeviceID).
+			Str("status", string(runner.Status)).
+			Msg("Runner not compatible: not online")
+		return false
+	}
+
+	if runner.TaskID != nil {
+		log.Info().
+			Str("runner_id", runner.DeviceID).
+			Interface("task_id", runner.TaskID).
+			Msg("Runner not compatible: has task assigned")
+		return false
+	}
+
+	log.Info().
+		Str("runner_id", runner.DeviceID).
+		Msg("Runner is compatible with task")
+	return true
 }
 
 func (s *TaskService) assignTaskToRunners(ctx context.Context, task *models.Task, availableRunners []*models.Runner, targetAssignments int) (int, []string, error) {
@@ -740,215 +838,4 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 	}
 
 	return nil
-}
-
-func sortRunnersByLoad(runners []*models.Runner) {
-	sort.Slice(runners, func(i, j int) bool {
-		return true // Simple round-robin for now
-	})
-}
-
-func isRunnerCompatibleWithTask(runner *models.Runner) bool {
-	log := gologger.WithComponent("task_service")
-
-	if runner.Status != models.RunnerStatusOnline {
-		log.Info().
-			Str("runner_id", runner.DeviceID).
-			Str("status", string(runner.Status)).
-			Msg("Runner not compatible: not online")
-		return false
-	}
-
-	if runner.TaskID != nil {
-		log.Info().
-			Str("runner_id", runner.DeviceID).
-			Interface("task_id", runner.TaskID).
-			Msg("Runner not compatible: has task assigned")
-		return false
-	}
-
-	log.Info().
-		Str("runner_id", runner.DeviceID).
-		Msg("Runner is compatible with task")
-	return true
-}
-
-func (s *TaskService) MonitorTasks() {
-	log := gologger.WithComponent("task_service")
-	log.Info().Msg("Starting task monitoring")
-
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-s.stopChan:
-			log.Info().Msg("Stopping task monitoring")
-			return
-		case <-ticker.C:
-			if err := s.checkStalledTasks(); err != nil {
-				log.Error().Err(err).Msg("Failed to check stalled tasks")
-			}
-		}
-	}
-}
-
-func (s *TaskService) checkStalledTasks() error {
-	log := gologger.WithComponent("task_service")
-
-	tasks, err := s.repo.ListByStatus(context.Background(), models.TaskStatusRunning)
-	if err != nil {
-		return fmt.Errorf("failed to list running tasks: %w", err)
-	}
-
-	for _, task := range tasks {
-		if task.UpdatedAt.Add(5 * time.Minute).Before(time.Now()) {
-			if err := s.handleStalledTask(task); err != nil {
-				log.Error().Err(err).
-					Str("task_id", task.ID.String()).
-					Msg("Failed to handle stalled task")
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *TaskService) handleStalledTask(task *models.Task) error {
-	log := gologger.WithComponent("task_service")
-
-	runner, err := s.runnerService.GetRunner(context.Background(), task.RunnerID)
-	if err != nil {
-		return err
-	}
-
-	runner.Status = models.RunnerStatusOffline
-	runner.TaskID = nil
-	if _, err := s.runnerService.UpdateRunner(context.Background(), runner); err != nil {
-		log.Error().Err(err).
-			Str("runner_id", runner.DeviceID).
-			Msg("Failed to update runner status")
-		return err
-	}
-
-	task.Status = models.TaskStatusPending
-	task.RunnerID = ""
-	task.UpdatedAt = time.Now()
-
-	if err := s.repo.Update(context.Background(), task); err != nil {
-		return fmt.Errorf("failed to reset task status: %w", err)
-	}
-
-	return nil
-}
-
-func (s *TaskService) checkAndAssignPendingTasksToRunner(ctx context.Context, runnerID string) error {
-	log := gologger.WithComponent("task_service")
-
-	runner, err := s.runnerService.GetRunner(ctx, runnerID)
-	if err != nil {
-		return fmt.Errorf("failed to get runner: %w", err)
-	}
-
-	if runner.Status != models.RunnerStatusOnline || runner.TaskID != nil {
-		return nil
-	}
-
-	pendingTasks, err := s.repo.ListByStatus(ctx, models.TaskStatusPending)
-	if err != nil {
-		return fmt.Errorf("failed to list pending tasks: %w", err)
-	}
-
-	if len(pendingTasks) == 0 {
-		return nil
-	}
-
-	log.Info().
-		Str("runner_id", runnerID).
-		Int("pending_tasks", len(pendingTasks)).
-		Msg("Checking pending tasks for runner")
-
-	allRunners, err := s.runnerService.ListRunnersByStatus(ctx, models.RunnerStatusOnline)
-	if err != nil {
-		return fmt.Errorf("failed to list all runners: %w", err)
-	}
-
-	sort.Slice(pendingTasks, func(i, j int) bool {
-		return pendingTasks[i].CreatedAt.Before(pendingTasks[j].CreatedAt)
-	})
-
-	for _, task := range pendingTasks {
-		assignedRunners := s.countAssignedRunners(task, allRunners)
-
-		if assignedRunners >= MaxRunnersForTask {
-			log.Debug().
-				Str("task_id", task.ID.String()).
-				Int("current_runners", assignedRunners).
-				Int("max_runners", MaxRunnersForTask).
-				Msg("Task already has maximum runners assigned")
-			continue
-		}
-
-		if assignedRunners < MinRunnersForTask {
-			if isRunnerCompatibleWithTask(runner) {
-				if err := s.assignTaskToRunner(ctx, task, runner); err != nil {
-					log.Error().Err(err).
-						Str("task_id", task.ID.String()).
-						Str("runner_id", runner.DeviceID).
-						Msg("Failed to assign task to runner")
-					continue
-				}
-				log.Info().
-					Str("task_id", task.ID.String()).
-					Str("runner_id", runner.DeviceID).
-					Int("current_assigned_runners", assignedRunners+1).
-					Int("min_runners_required", MinRunnersForTask).
-					Msg("Assigned runner to task that needed more runners")
-				return nil
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *TaskService) getAvailableRunners(ctx context.Context) ([]*models.Runner, error) {
-	log := gologger.WithComponent("task_service")
-
-	runners, err := s.runnerService.ListRunnersByStatus(ctx, models.RunnerStatusOnline)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list online runners: %w", err)
-	}
-
-	availableRunners := make([]*models.Runner, 0)
-	for _, runner := range runners {
-		if runner.Status == models.RunnerStatusOnline && runner.TaskID == nil {
-			availableRunners = append(availableRunners, runner)
-		}
-	}
-
-	log.Info().
-		Int("available_runners_count", len(availableRunners)).
-		Int("min_runners_required", MinRunnersForTask).
-		Int("max_runners_allowed", MaxRunnersForTask).
-		Msg("Found available runners after filtering")
-
-	return availableRunners, nil
-}
-
-func (s *TaskService) countAssignedRunners(task *models.Task, runners []*models.Runner) int {
-	assignedCount := 0
-	for _, r := range runners {
-		if r.TaskID != nil && *r.TaskID == task.ID {
-			assignedCount++
-		}
-	}
-	return assignedCount
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

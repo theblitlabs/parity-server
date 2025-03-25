@@ -52,7 +52,24 @@ func (s *RunnerService) taskMonitorWorker() {
 
 		timer = time.AfterFunc(100*time.Millisecond, func() {
 			if s.taskService != nil {
-				s.taskService.MonitorTasks()
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+
+				runners, err := s.ListRunnersByStatus(ctx, models.RunnerStatusOnline)
+				if err != nil {
+					log := gologger.WithComponent("runner_service")
+					log.Error().Err(err).Msg("Failed to list online runners")
+					return
+				}
+
+				for _, runner := range runners {
+					if err := s.taskService.checkAndAssignPendingTasksToRunner(ctx, runner.DeviceID); err != nil {
+						log := gologger.WithComponent("runner_service")
+						log.Error().Err(err).
+							Str("runner_id", runner.DeviceID).
+							Msg("Failed to check and assign pending tasks to runner")
+					}
+				}
 			}
 		})
 	}
@@ -96,7 +113,18 @@ func (s *RunnerService) CreateOrUpdateRunner(ctx context.Context, runner *models
 	}
 
 	if isNewOrBecomingAvailable {
-		s.triggerTaskMonitor()
+		if s.taskService != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := s.taskService.checkAndAssignPendingTasksToRunner(ctx, runner.DeviceID); err != nil {
+					log := gologger.WithComponent("runner_service")
+					log.Error().Err(err).
+						Str("runner_id", runner.DeviceID).
+						Msg("Failed to assign pending tasks to newly available runner")
+				}
+			}()
+		}
 	}
 
 	return updatedRunner, nil
