@@ -305,8 +305,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(taskConfig.Command) == 0 {
-			http.Error(w, "Command is required for Docker tasks", http.StatusBadRequest)
-			return
+			taskConfig.Command = []string{}
 		}
 	}
 
