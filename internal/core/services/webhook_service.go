@@ -54,12 +54,11 @@ func (s *WebhookService) SetStopChannel(stopCh chan struct{}) {
 }
 
 func (s *WebhookService) NotifyTaskUpdate() {
-	log := gologger.Get()
 	select {
 	case s.taskUpdateCh <- struct{}{}:
 		go s.notifyWebhooks()
 	case <-s.stopCh:
-		log.Debug().Msg("NotifyTaskUpdate: Ignoring update during shutdown")
+		return
 	default:
 	}
 }
@@ -87,10 +86,7 @@ func (s *WebhookService) RegisterWebhook(req RegisterWebhookRequest) (string, er
 	log := gologger.WithComponent("webhook")
 	log.Info().
 		Str("webhook_id", webhookID).
-		Str("url", req.URL).
 		Str("device_id", req.DeviceID).
-		Time("created_at", webhook.CreatedAt).
-		Int("total_webhooks", len(s.webhooks)).
 		Msg("Webhook registered")
 
 	go s.sendInitialNotification(webhook)
@@ -112,11 +108,7 @@ func (s *WebhookService) UnregisterWebhook(webhookID string) error {
 	log := gologger.WithComponent("webhook")
 	log.Info().
 		Str("webhook_id", webhookID).
-		Str("url", webhook.URL).
 		Str("device_id", webhook.DeviceID).
-		Time("created_at", webhook.CreatedAt).
-		Time("unregistered_at", time.Now()).
-		Int("remaining_webhooks", len(s.webhooks)).
 		Msg("Webhook unregistered")
 
 	return nil
@@ -127,7 +119,6 @@ func (s *WebhookService) notifyWebhooks() {
 
 	select {
 	case <-s.stopCh:
-		log.Debug().Msg("notifyWebhooks: Ignoring webhook notification during shutdown")
 		return
 	default:
 	}
@@ -139,7 +130,6 @@ func (s *WebhookService) notifyWebhooks() {
 	}
 
 	if len(tasks) == 0 {
-		log.Debug().Msg("No available tasks to notify about")
 		return
 	}
 
@@ -162,7 +152,6 @@ func (s *WebhookService) notifyWebhooks() {
 	s.webhookMutex.RUnlock()
 
 	if len(webhooks) == 0 {
-		log.Debug().Msg("No webhooks registered, skipping notifications")
 		return
 	}
 
@@ -181,7 +170,6 @@ func (s *WebhookService) notifyWebhooks() {
 	for _, webhook := range webhooks {
 		select {
 		case <-s.stopCh:
-			log.Debug().Msg("Cancelling webhook notifications due to shutdown")
 			return
 		default:
 			sem <- struct{}{}
@@ -208,7 +196,6 @@ func (s *WebhookService) sendWebhookNotification(client *http.Client, webhook We
 	if err != nil {
 		log.Error().Err(err).
 			Str("webhook_id", webhook.ID).
-			Str("url", webhook.URL).
 			Msg("Failed to create webhook request")
 		return
 	}
@@ -220,7 +207,6 @@ func (s *WebhookService) sendWebhookNotification(client *http.Client, webhook We
 	if err != nil {
 		log.Error().Err(err).
 			Str("webhook_id", webhook.ID).
-			Str("url", webhook.URL).
 			Msg("Failed to send webhook notification")
 		return
 	}
@@ -230,17 +216,11 @@ func (s *WebhookService) sendWebhookNotification(client *http.Client, webhook We
 		body, _ := io.ReadAll(resp.Body)
 		log.Error().
 			Str("webhook_id", webhook.ID).
-			Str("url", webhook.URL).
 			Int("status", resp.StatusCode).
 			Str("response", string(body)).
 			Msg("Webhook notification failed")
 		return
 	}
-
-	log.Debug().
-		Str("webhook_id", webhook.ID).
-		Str("url", webhook.URL).
-		Msg("Webhook notification sent successfully")
 }
 
 func (s *WebhookService) sendInitialNotification(webhook WebhookRegistration) {
@@ -250,16 +230,11 @@ func (s *WebhookService) sendInitialNotification(webhook WebhookRegistration) {
 	if err != nil {
 		log.Error().Err(err).
 			Str("webhook_id", webhook.ID).
-			Str("url", webhook.URL).
 			Msg("Failed to list tasks for initial notification")
 		return
 	}
 
 	if len(tasks) == 0 {
-		log.Debug().
-			Str("webhook_id", webhook.ID).
-			Str("url", webhook.URL).
-			Msg("No available tasks for initial notification")
 		return
 	}
 
@@ -272,7 +247,6 @@ func (s *WebhookService) sendInitialNotification(webhook WebhookRegistration) {
 	if err != nil {
 		log.Error().Err(err).
 			Str("webhook_id", webhook.ID).
-			Str("url", webhook.URL).
 			Msg("Failed to marshal initial notification payload")
 		return
 	}
@@ -292,9 +266,5 @@ func (s *WebhookService) sendInitialNotification(webhook WebhookRegistration) {
 func (s *WebhookService) CleanupResources() {
 	s.webhookMutex.Lock()
 	defer s.webhookMutex.Unlock()
-
 	s.webhooks = make(map[string]WebhookRegistration)
-
-	log := gologger.WithComponent("webhook")
-	log.Info().Msg("Webhook resources cleaned up")
 }

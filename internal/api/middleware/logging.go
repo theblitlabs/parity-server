@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,10 +27,13 @@ func Logging(next http.Handler) http.Handler {
 		ww := &responseWriter{w: w, status: http.StatusOK}
 		next.ServeHTTP(ww, r)
 
-		log.Info().
-			Int("status", ww.status).
-			Dur("duration", time.Since(start)).
-			Msg("Request completed")
+		isHeartbeat := strings.Contains(r.URL.Path, "/runners/heartbeat")
+		if !isHeartbeat || (isHeartbeat && ww.status != http.StatusOK) {
+			log.Info().
+				Int("status", ww.status).
+				Dur("duration", time.Since(start)).
+				Msg("Request completed")
+		}
 	})
 }
 
