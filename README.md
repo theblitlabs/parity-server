@@ -1,14 +1,30 @@
 # Parity Protocol
 
-Parity Protocol is a decentralized compute network where runners can execute compute tasks (e.g., running a Docker file) and earn incentives in the form of tokens. Task creators can add tasks to a pool, and the first runner to complete a task successfully receives a reward.
+A decentralized compute network enabling trustless task execution with token incentives. Task creators can submit compute tasks (e.g., Docker containers, scripts) to a pool, while runners compete to execute them for rewards. Built with Go and blockchain technology for transparent, secure, and efficient distributed computing.
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Development](#development)
+- [Configuration](#configuration)
+- [CLI Usage](#cli-usage)
+- [API Documentation](#api-documentation)
+- [Security](#security)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Quick Start
 
 ### Prerequisites
 
 - Go 1.22.7 or higher (using Go toolchain 1.23.4)
-- PostgreSQL
+- PostgreSQL 14.0 or higher
 - Make
+- Docker (optional, for containerized database)
+- Git
 
 ### Installation
 
@@ -25,14 +41,33 @@ cd parity-server
 make deps
 ```
 
-3. Start PostgreSQL (if using Docker):
+3. Set up the database:
+
+Using Docker (recommended for development):
 
 ```bash
 # Remove existing container if it exists
 docker rm -f parity-db || true
 
 # Start new PostgreSQL container
-docker run --name parity-db -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres
+docker run --name parity-db \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=parity \
+  -p 5432:5432 \
+  -d postgres:14
+```
+
+Or using local PostgreSQL:
+
+```bash
+createdb parity
+```
+
+4. Create and configure your environment:
+
+```bash
+cp config/config.example.yaml config/config.yaml
+# Edit config/config.yaml with your settings
 ```
 
 ### Development
@@ -92,18 +127,27 @@ database:
   sslmode: "disable"
 ```
 
-### CLI Commands
+### CLI Usage
 
 The CLI provides a unified interface through the `parity` command:
 
 ```bash
+# Start the server
 parity-server
+
+# View all available commands
+parity-server --help
+
+# Get help for a specific command
+parity-server <command> --help
 ```
 
-Each command supports the `--help` flag for detailed usage information:
+Common commands:
 
 ```bash
-parity-server <command> --help
+parity-server          # Start the server
+parity-server version  # Show version information
+parity-server config   # Show current configuration
 ```
 
 ### API Documentation
@@ -142,6 +186,13 @@ parity-server <command> --help
 4. Commit your changes (`git commit -m 'Add some amazing feature'`)
 5. Push to the branch (`git push origin feature/amazing-feature`)
 6. Open a Pull Request
+
+Please ensure your PR:
+
+- Includes tests for new features
+- Updates documentation as needed
+- Follows the existing code style
+- Includes a clear description of changes
 
 ### License
 
