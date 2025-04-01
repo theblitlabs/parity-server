@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -15,6 +17,11 @@ import (
 	"github.com/theblitlabs/parity-server/internal/core/config"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/core/ports"
+)
+
+const (
+	KeystoreDirName  = ".parity"
+	KeystoreFileName = "keystore.json"
 )
 
 type EthereumRewardClient struct {
@@ -49,7 +56,16 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 		return c.distributeWithMockWallet(log, result)
 	}
 
-	ks, err := keystore.NewKeystore(keystore.Config{})
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get home directory")
+		return fmt.Errorf("home directory error: %w", err)
+	}
+
+	ks, err := keystore.NewKeystore(keystore.Config{
+		DirPath:  filepath.Join(homeDir, KeystoreDirName),
+		FileName: KeystoreFileName,
+	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create keystore")
 	}
