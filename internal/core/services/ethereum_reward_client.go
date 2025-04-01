@@ -19,6 +19,11 @@ import (
 	"github.com/theblitlabs/parity-server/internal/core/ports"
 )
 
+const (
+	KeystoreDirName  = ".parity"
+	KeystoreFileName = "keystore.json"
+)
+
 type EthereumRewardClient struct {
 	cfg         *config.Config
 	stakeWallet ports.StakeWallet
@@ -58,8 +63,8 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 	}
 
 	ks, err := keystore.NewKeystore(keystore.Config{
-		DirPath:  filepath.Join(homeDir, ".parity"),
-		FileName: "keystore.json",
+		DirPath:  filepath.Join(homeDir, KeystoreDirName),
+		FileName: KeystoreFileName,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create keystore")
@@ -171,7 +176,7 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 // distributeWithMockWallet handles reward distribution using a mock wallet for testing
 func (c *EthereumRewardClient) distributeWithMockWallet(log zerolog.Logger, result *models.TaskResult) error {
 	stakeInfo, err := c.stakeWallet.GetStakeInfo(result.DeviceID)
-	if (err != nil) {
+	if err != nil {
 		log.Error().Err(err).Msg("Stake info check failed")
 		return nil
 	}
