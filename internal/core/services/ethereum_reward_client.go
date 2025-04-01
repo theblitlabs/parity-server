@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -49,7 +51,16 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 		return c.distributeWithMockWallet(log, result)
 	}
 
-	ks, err := keystore.NewKeystore(keystore.Config{})
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get home directory")
+		return fmt.Errorf("home directory error: %w", err)
+	}
+
+	ks, err := keystore.NewKeystore(keystore.Config{
+		DirPath:  filepath.Join(homeDir, ".parity"),
+		FileName: "keystore.json",
+	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create keystore")
 	}
@@ -160,7 +171,7 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 // distributeWithMockWallet handles reward distribution using a mock wallet for testing
 func (c *EthereumRewardClient) distributeWithMockWallet(log zerolog.Logger, result *models.TaskResult) error {
 	stakeInfo, err := c.stakeWallet.GetStakeInfo(result.DeviceID)
-	if err != nil {
+	if (err != nil) {
 		log.Error().Err(err).Msg("Stake info check failed")
 		return nil
 	}
