@@ -10,8 +10,11 @@ import (
 )
 
 func Logging() gin.HandlerFunc {
-	hostname, _ := os.Hostname()
-
+	hostname, err := os.Hostname()
+	if err != nil {
+		gologger.Get().Error().Err(err).Msg("Failed to get hostname")
+		hostname = "unknown"
+	}
 	return func(c *gin.Context) {
 		start := time.Now()
 		requestID := uuid.New().String()
