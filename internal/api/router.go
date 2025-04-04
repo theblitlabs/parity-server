@@ -1,6 +1,8 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 	"github.com/theblitlabs/parity-server/internal/api/middleware"
@@ -61,4 +63,8 @@ func (r *Router) Engine() *gin.Engine {
 
 func (r *Router) AddMiddleware(middleware gin.HandlerFunc) {
 	r.engine.Use(middleware)
+}
+
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r.engine.ServeHTTP(w, req)
 }
