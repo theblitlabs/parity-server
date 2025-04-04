@@ -11,9 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/gorilla/mux"
-
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/core/models"
@@ -85,123 +84,126 @@ func (h *TaskHandler) NotifyTaskUpdate() {
 	h.webhookService.NotifyTaskUpdate()
 }
 
-func (h *TaskHandler) RegisterWebhook(w http.ResponseWriter, r *http.Request) {
+func (h *TaskHandler) RegisterWebhook(c *gin.Context) {
 	log := gologger.WithComponent("task_handler")
 	var req services.RegisterWebhookRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Error().Err(err).Msg("Invalid request body")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	runner, err := h.runnerService.CreateOrUpdateRunner(r.Context(), &models.Runner{
+	runner, err := h.runnerService.CreateOrUpdateRunner(c.Request.Context(), &models.Runner{
 		DeviceID:      req.DeviceID,
 		Status:        models.RunnerStatusOnline,
 		Webhook:       req.URL,
 		WalletAddress: req.WalletAddress,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Error().Err(err).Str("device_id", req.DeviceID).Msg("Failed to create/update runner")
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(map[string]string{
+	c.JSON(http.StatusCreated, gin.H{
 		"id": fmt.Sprintf("%d", runner.ID),
-	}); err != nil {
-		log.Error().Err(err).Msg("Failed to encode response")
-		return
-	}
+	})
 }
 
-func (h *TaskHandler) UnregisterWebhook(w http.ResponseWriter, r *http.Request) {
-	deviceID := mux.Vars(r)["device_id"]
+func (h *TaskHandler) UnregisterWebhook(c *gin.Context) {
+	deviceID := c.Param("device_id")
 	if deviceID == "" {
-		http.Error(w, "Device ID is required", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
 		return
 	}
 
-	_, err := h.runnerService.UpdateRunner(r.Context(), &models.Runner{
+	_, err := h.runnerService.UpdateRunner(c.Request.Context(), &models.Runner{
 		DeviceID: deviceID,
 		Webhook:  "",
 		Status:   models.RunnerStatusOffline,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	c.Status(http.StatusOK)
 }
 
-func (h *TaskHandler) GetTaskResult(w http.ResponseWriter, r *http.Request) {
+func (h *TaskHandler) GetTaskResult(c *gin.Context) {
 	log := gologger.Get()
-	vars := mux.Vars(r)
-	taskID := vars["id"]
+	taskID := c.Param("id")
 	if taskID == "" {
-		http.Error(w, "task ID is required", http.StatusBadRequest)
+		log.Error().Msg("Task ID is required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task ID is required"})
 		return
 	}
 
-	result, err := h.service.GetTaskResult(r.Context(), taskID)
+	result, err := h.service.GetTaskResult(c.Request.Context(), taskID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Str("task_id", taskID).Msg("Failed to get task result")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	if result == nil {
-		http.Error(w, "task result not found", http.StatusNotFound)
+		log.Error().Str("task_id", taskID).Msg("Task result not found")
+		c.JSON(http.StatusNotFound, gin.H{"error": "task result not found"})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(result); err != nil {
-		log.Error().Err(err).Str("task_id", taskID).Msg("Failed to encode task result response")
-	}
+	c.JSON(http.StatusOK, result)
 }
 
-func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
+func (h *TaskHandler) CreateTask(c *gin.Context) {
 	log := gologger.WithComponent("task_handler")
-	contentType := r.Header.Get("Content-Type")
+	contentType := c.GetHeader("Content-Type")
 	var req CreateTaskRequest
 	var dockerImage []byte
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(32 << 20); err != nil {
+		form, err := c.MultipartForm()
+		if err != nil {
 			log.Error().Err(err).Msg("Failed to parse multipart form")
-			http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse multipart form"})
 			return
 		}
 
-		taskData := r.FormValue("task")
-		if taskData == "" {
-			http.Error(w, "Task data is required", http.StatusBadRequest)
+		taskData := form.Value["task"]
+		if len(taskData) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Task data is required"})
 			return
 		}
 
-		if err := json.Unmarshal([]byte(taskData), &req); err != nil {
+		if err := json.Unmarshal([]byte(taskData[0]), &req); err != nil {
 			log.Error().Err(err).Msg("Failed to unmarshal task data")
-			http.Error(w, "Invalid task data", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task data"})
 			return
 		}
 
 		req.Type = models.TaskTypeDocker
 
-		file, header, err := r.FormFile("image")
+		file, err := c.FormFile("image")
 		if err == nil {
-			defer file.Close()
+			f, err := file.Open()
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to open Docker image file")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open Docker image file"})
+				return
+			}
+			defer f.Close()
 
-			dockerImage, err = io.ReadAll(file)
+			dockerImage, err = io.ReadAll(f)
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to read Docker image file")
-				http.Error(w, "Failed to read Docker image file", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read Docker image file"})
 				return
 			}
 
-			imageURL, err := h.s3Service.UploadDockerImage(r.Context(), dockerImage, strings.TrimSuffix(header.Filename, ".tar"))
+			imageURL, err := h.s3Service.UploadDockerImage(c.Request.Context(), dockerImage, strings.TrimSuffix(file.Filename, ".tar"))
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to upload Docker image")
-				http.Error(w, "Failed to upload Docker image", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upload Docker image"})
 				return
 			}
 
@@ -218,21 +220,20 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 			taskConfig := models.TaskConfig{
 				Command:        req.Command,
 				DockerImageURL: imageURL,
-				ImageName:      strings.TrimSuffix(header.Filename, ".tar"),
+				ImageName:      strings.TrimSuffix(file.Filename, ".tar"),
 			}
 
 			var configErr error
 			req.Config, configErr = json.Marshal(taskConfig)
 			if configErr != nil {
 				log.Error().Err(configErr).Msg("Failed to marshal task config")
-				http.Error(w, "Failed to process task configuration", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process task configuration"})
 				return
 			}
 		}
 	} else {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			log.Error().Err(err).Msg("Failed to decode request")
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 			return
 		}
 
@@ -257,50 +258,50 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 			req.Config, configErr = json.Marshal(taskConfig)
 			if configErr != nil {
 				log.Error().Err(configErr).Msg("Failed to marshal task config")
-				http.Error(w, "Failed to process task configuration", http.StatusInternalServerError)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process task configuration"})
 				return
 			}
 		}
 	}
 
 	if req.Title == "" || req.Description == "" {
-		http.Error(w, "Title and description are required", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Title and description are required"})
 		return
 	}
 
-	deviceID := r.Header.Get("X-Device-ID")
+	deviceID := c.GetHeader("X-Device-ID")
 	if deviceID == "" {
-		http.Error(w, "Device ID is required", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
 		return
 	}
 
-	creatorAddress := r.Header.Get("X-Creator-Address")
+	creatorAddress := c.GetHeader("X-Creator-Address")
 	if creatorAddress == "" {
-		http.Error(w, "Creator address is required", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Creator address is required"})
 		return
 	}
 
 	if req.Type != models.TaskTypeDocker && req.Type != models.TaskTypeCommand {
 		log.Error().Str("type", string(req.Type)).Msg("Invalid task type")
-		http.Error(w, "Invalid task type", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task type"})
 		return
 	}
 
 	if req.Type == models.TaskTypeDocker {
 		if req.Environment == nil || req.Environment.Type != "docker" {
-			http.Error(w, "Docker environment configuration is required", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Docker environment configuration is required"})
 			return
 		}
 
 		var taskConfig models.TaskConfig
 		if err := json.Unmarshal(req.Config, &taskConfig); err != nil {
 			log.Error().Err(err).Msg("Failed to unmarshal task config")
-			http.Error(w, "Invalid task configuration", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task configuration"})
 			return
 		}
 
 		if taskConfig.ImageName == "" {
-			http.Error(w, "Image name is required for Docker tasks", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Image name is required for Docker tasks"})
 			return
 		}
 
@@ -322,145 +323,81 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.checkStakeBalance(task); err != nil {
 		log.Error().Err(err).Str("device_id", deviceID).Msg("Insufficient stake balance")
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	if err := h.service.CreateTask(r.Context(), task); err != nil {
+	if err := h.service.CreateTask(c.Request.Context(), task); err != nil {
 		log.Error().Err(err).Msg("Failed to create task")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	h.NotifyTaskUpdate()
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(task); err != nil {
-		log.Error().Err(err).Msg("Failed to encode task response")
-		return
-	}
+	c.JSON(http.StatusCreated, task)
 }
 
-func (h *TaskHandler) StartTask(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	log := gologger.WithComponent("task_handler")
-
-	vars := mux.Vars(r)
-	taskID := vars["id"]
+func (h *TaskHandler) StartTask(c *gin.Context) {
+	taskID := c.Param("id")
 	if taskID == "" {
-		http.Error(w, "task ID is required", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task ID is required"})
 		return
 	}
 
-	runnerID := r.Header.Get("X-Runner-ID")
-	if runnerID == "" {
-		http.Error(w, "X-Runner-ID header is required", http.StatusBadRequest)
+	deviceID := c.GetHeader("X-Device-ID")
+	if deviceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
 		return
 	}
 
-	task, err := h.service.GetTask(ctx, taskID)
+	if err := h.service.AssignTaskToRunner(c.Request.Context(), taskID, deviceID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.service.StartTask(c.Request.Context(), taskID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	task, err := h.service.GetTask(c.Request.Context(), taskID)
 	if err != nil {
-		log.Error().Err(err).Str("task_id", taskID).Msg("Failed to get task")
-		http.Error(w, fmt.Sprintf("Failed to get task: %v", err), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	if task.Status == models.TaskStatusCompleted {
-		http.Error(w, "Task is already completed", http.StatusConflict)
-		return
-	}
-
-	runner, err := h.runnerService.GetRunner(ctx, runnerID)
-	if err != nil {
-		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to get runner")
-		http.Error(w, fmt.Sprintf("Failed to get runner: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	if task.Status == models.TaskStatusRunning {
-		if runner.TaskID != nil && *runner.TaskID == task.ID {
-			w.WriteHeader(http.StatusOK)
-			return
-		} else {
-			http.Error(w, "Task is already assigned to a different runner", http.StatusConflict)
-			return
-		}
-	}
-
-	if task.Status == models.TaskStatusPending {
-		if err := h.service.AssignTaskToRunner(ctx, taskID, runnerID); err != nil {
-			if err.Error() == "task unavailable" {
-				http.Error(w, "Task is unavailable for assignment", http.StatusConflict)
-				return
-			}
-			log.Error().Err(err).
-				Str("task_id", taskID).
-				Str("runner_id", runnerID).
-				Msg("Failed to assign task")
-			http.Error(w, fmt.Sprintf("Failed to assign task: %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		task, err = h.service.GetTask(ctx, taskID)
-		if err != nil {
-			log.Error().Err(err).Str("task_id", taskID).Msg("Failed to get updated task")
-			http.Error(w, fmt.Sprintf("Failed to get updated task: %v", err), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	if task.Status != models.TaskStatusRunning {
-		if err := h.service.StartTask(ctx, taskID); err != nil {
-			if err.Error() == "task already completed" {
-				http.Error(w, "Task is already completed", http.StatusConflict)
-				return
-			}
-
-			log.Error().Err(err).Str("task_id", taskID).Msg("Failed to start task")
-			http.Error(w, fmt.Sprintf("Failed to start task: %v", err), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	w.WriteHeader(http.StatusOK)
+	c.JSON(http.StatusOK, task)
 }
 
-func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
-	log := gologger.WithComponent("task_handler")
-	vars := mux.Vars(r)
-	taskID := vars["id"]
-	deviceID := r.Header.Get("X-Device-ID")
+func (h *TaskHandler) SaveTaskResult(c *gin.Context) {
+	taskID := c.Param("id")
+	if taskID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task ID is required"})
+		return
+	}
 
+	deviceID := c.GetHeader("X-Device-ID")
 	if deviceID == "" {
-		http.Error(w, "Device ID required", http.StatusBadRequest)
-		return
-	}
-
-	task, err := h.service.GetTask(r.Context(), taskID)
-	if err != nil {
-		log.Error().Err(err).
-			Str("task", taskID).
-			Str("device", deviceID).
-			Msg("Failed to get task")
-		http.Error(w, "Task fetch failed", http.StatusInternalServerError)
-		return
-	}
-
-	if task == nil {
-		http.Error(w, "Task not found", http.StatusNotFound)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
 		return
 	}
 
 	var result models.TaskResult
-	if err := json.NewDecoder(r.Body).Decode(&result); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&result); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
 	taskUUID, err := uuid.Parse(taskID)
 	if err != nil {
-		http.Error(w, "Invalid task ID", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+		return
+	}
+
+	task, err := h.service.GetTask(c.Request.Context(), taskID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -468,30 +405,21 @@ func (h *TaskHandler) SaveTaskResult(w http.ResponseWriter, r *http.Request) {
 	result.DeviceID = deviceID
 	result.CreatorDeviceID = task.CreatorDeviceID
 	result.SolverDeviceID = deviceID
-
-	if task.CreatorAddress == "" {
+	result.CreatorAddress = task.CreatorAddress
+	if result.CreatorAddress == "" {
 		result.CreatorAddress = task.CreatorDeviceID
-	} else {
-		result.CreatorAddress = task.CreatorAddress
 	}
-
 	result.RunnerAddress = deviceID
 	result.CreatedAt = time.Now()
 	result.DeviceIDHash = utils.HashDeviceID(deviceID)
 	result.Clean()
 
-	if err := h.service.SaveTaskResult(r.Context(), &result); err != nil {
-		if strings.Contains(err.Error(), "invalid task result:") {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		log.Error().Err(err).Str("task", taskID).Msg("Failed to save task result")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := h.service.SaveTaskResult(c.Request.Context(), &result); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	h.NotifyTaskUpdate()
-	w.WriteHeader(http.StatusOK)
+	c.Status(http.StatusOK)
 }
 
 func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
@@ -547,82 +475,86 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 	}
 }
 
-func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
-	tasks, err := h.service.GetTasks(r.Context())
+func (h *TaskHandler) ListTasks(c *gin.Context) {
+	tasks, err := h.service.GetTasks(c.Request.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(tasks); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-		return
-	}
+	c.JSON(http.StatusOK, tasks)
 }
 
-func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
-	log := gologger.Get()
-	taskID := mux.Vars(r)["id"]
-	task, err := h.service.GetTask(r.Context(), taskID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+func (h *TaskHandler) GetTask(c *gin.Context) {
+	taskID := c.Param("id")
+	if taskID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task ID is required"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(task); err != nil {
-		log.Error().Err(err).Msg("Failed to encode task response")
+
+	task, err := h.service.GetTask(c.Request.Context(), taskID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
+	c.JSON(http.StatusOK, task)
 }
 
-func (h *TaskHandler) AssignTask(w http.ResponseWriter, r *http.Request) {
-	taskID := mux.Vars(r)["id"]
+func (h *TaskHandler) AssignTask(c *gin.Context) {
+	taskID := c.Param("id")
+	if taskID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task ID is required"})
+		return
+	}
+
 	var req struct {
 		RunnerID string `json:"runner_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+
 	if req.RunnerID == "" {
-		http.Error(w, "Runner ID is required", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Runner ID is required"})
 		return
 	}
-	if err := h.service.AssignTaskToRunner(r.Context(), taskID, req.RunnerID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+	if err := h.service.AssignTaskToRunner(c.Request.Context(), taskID, req.RunnerID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	h.NotifyTaskUpdate()
-	w.WriteHeader(http.StatusOK)
+
+	task, err := h.service.GetTask(c.Request.Context(), taskID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
 }
 
-func (h *TaskHandler) GetTaskReward(w http.ResponseWriter, r *http.Request) {
-	log := gologger.Get()
-	taskID := mux.Vars(r)["id"]
-	reward, err := h.service.GetTaskReward(r.Context(), taskID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+func (h *TaskHandler) GetTaskReward(c *gin.Context) {
+	taskID := c.Param("id")
+	if taskID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task ID is required"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(reward); err != nil {
-		log.Error().Err(err).Msg("Failed to encode reward response")
+
+	reward, err := h.service.GetTaskReward(c.Request.Context(), taskID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
+	c.JSON(http.StatusOK, gin.H{"reward": reward})
 }
 
-func (h *TaskHandler) ListAvailableTasks(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	tasks, err := h.service.ListAvailableTasks(ctx)
+func (h *TaskHandler) ListAvailableTasks(c *gin.Context) {
+	tasks, err := h.service.ListAvailableTasks(c.Request.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(tasks); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-		return
-	}
+	c.JSON(http.StatusOK, tasks)
 }
 
 func (h *TaskHandler) NotifyRunnerOfTasks(runnerID string, tasks []*models.Task) error {
@@ -691,123 +623,74 @@ func (h *TaskHandler) NotifyRunnerOfTasks(runnerID string, tasks []*models.Task)
 	return nil
 }
 
-func (h *TaskHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
-	taskID := mux.Vars(r)["id"]
-	if err := h.service.CompleteTask(r.Context(), taskID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+func (h *TaskHandler) CompleteTask(c *gin.Context) {
+	taskID := c.Param("id")
+	if taskID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task ID is required"})
 		return
 	}
-	h.NotifyTaskUpdate()
-	w.WriteHeader(http.StatusOK)
+
+	if err := h.service.CompleteTask(c.Request.Context(), taskID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	task, err := h.service.GetTask(c.Request.Context(), taskID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
 }
 
 func (h *TaskHandler) CleanupResources() {
 	h.webhookService.CleanupResources()
 }
 
-func (h *TaskHandler) RegisterRunner(w http.ResponseWriter, r *http.Request) {
-	var registerRequest struct {
-		DeviceID      string              `json:"device_id"`
-		WalletAddress string              `json:"wallet_address"`
-		Status        models.RunnerStatus `json:"status"`
-		Webhook       string              `json:"webhook"`
-	}
-
-	log := gologger.WithComponent("task_handler")
-
-	if err := json.NewDecoder(r.Body).Decode(&registerRequest); err != nil {
-		log.Error().Err(err).Msg("Failed to decode register request")
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+func (h *TaskHandler) RegisterRunner(c *gin.Context) {
+	var runner models.Runner
+	if err := c.ShouldBindJSON(&runner); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	if registerRequest.DeviceID == "" {
-		http.Error(w, "Device ID is required", http.StatusBadRequest)
+	if runner.DeviceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
 		return
 	}
 
-	if registerRequest.WalletAddress == "" {
-		http.Error(w, "Wallet address is required", http.StatusBadRequest)
+	if runner.WalletAddress == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Wallet address is required"})
 		return
 	}
 
-	runner := &models.Runner{
-		DeviceID:      registerRequest.DeviceID,
-		WalletAddress: registerRequest.WalletAddress,
-		Status:        registerRequest.Status,
-		Webhook:       registerRequest.Webhook,
-	}
-
-	if runner.Status == "" {
-		runner.Status = models.RunnerStatusOnline
-	}
-
-	ctx := r.Context()
-	savedRunner, err := h.runnerService.CreateOrUpdateRunner(ctx, runner)
+	runner.Status = models.RunnerStatusOnline
+	createdRunner, err := h.runnerService.CreateOrUpdateRunner(c.Request.Context(), &runner)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to register runner")
-		http.Error(w, fmt.Sprintf("Failed to register runner: %v", err), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(savedRunner); err != nil {
-		log.Error().Err(err).Msg("Failed to encode runner response")
-		return
-	}
+	c.JSON(http.StatusCreated, createdRunner)
 }
 
-func (h *TaskHandler) RunnerHeartbeat(w http.ResponseWriter, r *http.Request) {
-	var message struct {
-		Type    string          `json:"type"`
-		Payload json.RawMessage `json:"payload"`
-	}
-
-	log := gologger.WithComponent("task_handler")
-
-	if err := json.NewDecoder(r.Body).Decode(&message); err != nil {
-		log.Error().Err(err).Msg("Failed to decode heartbeat message")
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if message.Type != "heartbeat" {
-		http.Error(w, "Invalid message type", http.StatusBadRequest)
-		return
-	}
-
-	var heartbeat struct {
-		DeviceID      string              `json:"device_id"`
-		WalletAddress string              `json:"wallet_address"`
-		Status        models.RunnerStatus `json:"status"`
-		Timestamp     int64               `json:"timestamp"`
-	}
-
-	if err := json.Unmarshal(message.Payload, &heartbeat); err != nil {
-		log.Error().Err(err).Msg("Failed to parse heartbeat payload")
-		http.Error(w, "Invalid heartbeat payload", http.StatusBadRequest)
-		return
-	}
-
-	if heartbeat.DeviceID == "" {
-		http.Error(w, "Device ID is required", http.StatusBadRequest)
+func (h *TaskHandler) RunnerHeartbeat(c *gin.Context) {
+	deviceID := c.GetHeader("X-Device-ID")
+	if deviceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
 		return
 	}
 
 	runner := &models.Runner{
-		DeviceID:      heartbeat.DeviceID,
-		WalletAddress: heartbeat.WalletAddress,
-		Status:        heartbeat.Status,
+		DeviceID: deviceID,
+		Status:   models.RunnerStatusOnline,
 	}
 
-	ctx := r.Context()
-	_, err := h.runnerService.UpdateRunnerStatus(ctx, runner)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to update runner status")
-		http.Error(w, fmt.Sprintf("Failed to update runner status: %v", err), http.StatusInternalServerError)
+	if _, err := h.runnerService.UpdateRunnerStatus(c.Request.Context(), runner); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	c.Status(http.StatusOK)
 }

@@ -1,57 +1,70 @@
 package api
 
 import (
-	"github.com/gorilla/mux"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 	"github.com/theblitlabs/parity-server/internal/api/middleware"
 )
 
+func init() {
+	// Set Gin to release mode to disable debug logging
+	gin.SetMode(gin.ReleaseMode)
+}
+
 type Router struct {
-	*mux.Router
-	middleware []mux.MiddlewareFunc
-	endpoint   string
+	engine   *gin.Engine
+	endpoint string
 }
 
 func NewRouter(taskHandler *handlers.TaskHandler, endpoint string) *Router {
+	engine := gin.New()
+
+	engine.Use(gin.Recovery())
+	engine.Use(middleware.Logging())
+
 	r := &Router{
-		Router:     mux.NewRouter(),
-		middleware: []mux.MiddlewareFunc{middleware.Logging},
-		endpoint:   endpoint,
+		engine:   engine,
+		endpoint: endpoint,
 	}
 
-	apiRouter := r.Router.PathPrefix("/").Subrouter()
-	for _, m := range r.middleware {
-		apiRouter.Use(m)
-	}
-
-	r.registerRoutes(apiRouter, taskHandler)
+	r.registerRoutes(taskHandler)
 	return r
 }
 
-func (r *Router) registerRoutes(router *mux.Router, taskHandler *handlers.TaskHandler) {
-	api := router.PathPrefix(r.endpoint).Subrouter()
-	tasks := api.PathPrefix("/tasks").Subrouter()
-	runners := api.PathPrefix("/runners").Subrouter()
+func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler) {
+	api := r.engine.Group(r.endpoint)
+	tasks := api.Group("/tasks")
+	runners := api.Group("/runners")
 
-	tasks.HandleFunc("", taskHandler.CreateTask).Methods("POST")
-	tasks.HandleFunc("", taskHandler.ListTasks).Methods("GET")
-	tasks.HandleFunc("/{id}", taskHandler.GetTask).Methods("GET")
-	tasks.HandleFunc("/{id}/assign", taskHandler.AssignTask).Methods("POST")
-	tasks.HandleFunc("/{id}/reward", taskHandler.GetTaskReward).Methods("GET")
-	tasks.HandleFunc("/{id}/result", taskHandler.GetTaskResult).Methods("GET")
+	tasks.POST("", taskHandler.CreateTask)
+	tasks.GET("", taskHandler.ListTasks)
+	tasks.GET("/:id", taskHandler.GetTask)
+	tasks.POST("/:id/assign", taskHandler.AssignTask)
+	tasks.GET("/:id/reward", taskHandler.GetTaskReward)
+	tasks.GET("/:id/result", taskHandler.GetTaskResult)
 
-	runners.HandleFunc("/tasks/available", taskHandler.ListAvailableTasks).Methods("GET")
-	runners.HandleFunc("/tasks/{id}/start", taskHandler.StartTask).Methods("POST")
-	runners.HandleFunc("/tasks/{id}/complete", taskHandler.CompleteTask).Methods("POST")
-	runners.HandleFunc("/tasks/{id}/result", taskHandler.SaveTaskResult).Methods("POST")
+	runners.GET("/tasks/available", taskHandler.ListAvailableTasks)
+	runners.POST("/tasks/:id/start", taskHandler.StartTask)
+	runners.POST("/tasks/:id/complete", taskHandler.CompleteTask)
+	runners.POST("/tasks/:id/result", taskHandler.SaveTaskResult)
 
-	runners.HandleFunc("/webhooks", taskHandler.RegisterWebhook).Methods("POST")
-	runners.HandleFunc("/webhooks/{device_id}", taskHandler.UnregisterWebhook).Methods("DELETE")
+	runners.POST("/webhooks", taskHandler.RegisterWebhook)
+	runners.DELETE("/webhooks/:device_id", taskHandler.UnregisterWebhook)
 
-	runners.HandleFunc("", taskHandler.RegisterRunner).Methods("POST")
-	runners.HandleFunc("/heartbeat", taskHandler.RunnerHeartbeat).Methods("POST")
+	runners.POST("", taskHandler.RegisterRunner)
+	runners.POST("/heartbeat", taskHandler.RunnerHeartbeat)
 }
 
-func (r *Router) AddMiddleware(middleware mux.MiddlewareFunc) {
-	r.Use(middleware)
+func (r *Router) Engine() *gin.Engine {
+	return r.engine
+}
+
+func (r *Router) AddMiddleware(middleware gin.HandlerFunc) {
+	r.engine.Use(middleware)
+}
+
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r.engine.ServeHTTP(w, req)
 }
