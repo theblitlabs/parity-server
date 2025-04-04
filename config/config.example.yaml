@@ -4,7 +4,7 @@ server:
   endpoint:
 
 database:
-  url:
+  url: postgres://<username>:<password>@<host>:<port>/<database_name>
 
 ethereum:
   rpc:
@@ -13,8 +13,8 @@ ethereum:
   stake_wallet_address:
 
 aws:
-  region: us-west-2
-  bucket_name: dev-parity-docker-images
+  region:
+  bucket_name:
 
 scheduler:
   interval:

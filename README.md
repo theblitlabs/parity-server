@@ -104,32 +104,44 @@ make watch
 
 ### Configuration
 
-Create a `config.yaml` file in the `config` directory using the example provided:
+Create a `config.yaml` file in the `config` directory using the example provided. Make sure to replace the placeholder values with your own configuration:
 
 ```yaml
-ethereum:
-  rpc: "http://localhost:8545"
-  chain_id: 1337
-  token_address: "0x..."
-  stake_wallet_address: "0x..."
-
 server:
-  host: "localhost"
-  port: "8080"
-  endpoint: "/api"
+  port: # The port your server will listen on (e.g. 8080)
+  host: # The host to bind to (e.g. localhost)
+  endpoint: # API endpoint prefix (e.g. /api)
 
 database:
-  host: "localhost"
-  port: 5432
-  user: "postgres"
-  password: "postgres"
-  name: "parity"
-  sslmode: "disable"
+  url: postgres://<username>:<password>@<host>:<port>/<database_name> # Your PostgreSQL connection URL
+
+ethereum:
+  rpc: # Your Ethereum RPC endpoint (e.g. http://localhost:8545)
+  chain_id: # Your blockchain network ID (e.g. 1337 for local, 1 for mainnet)
+  token_address: # The deployed token contract address
+  stake_wallet_address: # The wallet address used for staking
+
+aws:
+  region: # AWS region for your services (e.g. us-east-1)
+  bucket_name: # AWS S3 bucket name for storage
+
+scheduler:
+  interval: # Task scheduler interval (e.g. 10, 30, 60)
 ```
+
+> **Important**: The above values are examples only. You must replace them with your own configuration values before running the application. Particularly important are:
+>
+> - The database URL with your PostgreSQL credentials
+> - The Ethereum RPC endpoint for your network
+> - The correct chain ID for your network
+> - Your deployed token contract address
+> - Your stake wallet address
+> - AWS credentials and region if using S3 storage
+> - Appropriate scheduler interval for your needs
 
 ### CLI Usage
 
-The CLI provides a unified interface through the `parity` command:
+The CLI provides a unified interface through the `parity-server` command:
 
 ```bash
 # Start the server
