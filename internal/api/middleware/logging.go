@@ -12,7 +12,8 @@ import (
 func Logging() gin.HandlerFunc {
 	hostname, err := os.Hostname()
 	if err != nil {
-		gologger.Get().Error().Err(err).Msg("Failed to get hostname")
+		log := gologger.Get()
+		log.Error().Err(err).Msg("Failed to get hostname")
 		hostname = "unknown"
 	}
 	return func(c *gin.Context) {

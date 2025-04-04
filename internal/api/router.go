@@ -12,18 +12,19 @@ func init() {
 }
 
 type Router struct {
-	*gin.Engine
-	middleware []gin.HandlerFunc
-	endpoint   string
+	engine   *gin.Engine
+	endpoint string
 }
 
 func NewRouter(taskHandler *handlers.TaskHandler, endpoint string) *Router {
 	engine := gin.New()
 
+	engine.Use(gin.Recovery())
+	engine.Use(middleware.Logging())
+
 	r := &Router{
-		Engine:     engine,
-		middleware: []gin.HandlerFunc{gin.Recovery(), middleware.Logging()},
-		endpoint:   endpoint,
+		engine:   engine,
+		endpoint: endpoint,
 	}
 
 	r.registerRoutes(taskHandler)
@@ -31,15 +32,10 @@ func NewRouter(taskHandler *handlers.TaskHandler, endpoint string) *Router {
 }
 
 func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler) {
-	for _, m := range r.middleware {
-		r.Use(m)
-	}
-
-	api := r.Group(r.endpoint)
+	api := r.engine.Group(r.endpoint)
 	tasks := api.Group("/tasks")
 	runners := api.Group("/runners")
 
-	// Task routes
 	tasks.POST("", taskHandler.CreateTask)
 	tasks.GET("", taskHandler.ListTasks)
 	tasks.GET("/:id", taskHandler.GetTask)
@@ -47,7 +43,6 @@ func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler) {
 	tasks.GET("/:id/reward", taskHandler.GetTaskReward)
 	tasks.GET("/:id/result", taskHandler.GetTaskResult)
 
-	// Runner routes
 	runners.GET("/tasks/available", taskHandler.ListAvailableTasks)
 	runners.POST("/tasks/:id/start", taskHandler.StartTask)
 	runners.POST("/tasks/:id/complete", taskHandler.CompleteTask)
@@ -60,6 +55,10 @@ func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler) {
 	runners.POST("/heartbeat", taskHandler.RunnerHeartbeat)
 }
 
+func (r *Router) Engine() *gin.Engine {
+	return r.engine
+}
+
 func (r *Router) AddMiddleware(middleware gin.HandlerFunc) {
-	r.Use(middleware)
+	r.engine.Use(middleware)
 }
