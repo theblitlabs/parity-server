@@ -2,6 +2,7 @@ package config
 
 import (
 	"sync"
+	"fmt"
 
 	"github.com/spf13/viper"
 )
@@ -54,6 +55,17 @@ var (
 	instance *ConfigManager
 	once     sync.Once
 )
+
+func (dc *DatabaseConfig) GetConnectionURL() string {
+	return fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s",
+		dc.Username,
+		dc.Password,
+		dc.Host,
+		dc.Port,
+		dc.Database_name,
+	)
+}
 
 func GetConfigManager() *ConfigManager {
 	once.Do(func() {
