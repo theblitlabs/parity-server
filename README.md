@@ -113,7 +113,11 @@ server:
   endpoint: # API endpoint prefix (e.g. /api)
 
 database:
-  url: postgres://<username>:<password>@<host>:<port>/<database_name> # Your PostgreSQL connection URL
+  username: <your_db_username>
+  password: <your_db_password>
+  host: <your_db_host> # e.g. localhost or db container name
+  port: <your_db_port> # e.g. 5432
+  database_name: <your_db_name> # e.g. parity
 
 ethereum:
   rpc: # Your Ethereum RPC endpoint (e.g. http://localhost:8545)

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -21,7 +22,11 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	URL string `mapstructure:"url"`
+	Username      string `mapstructure:"username"`
+	Password      string `mapstructure:"password"`
+	Host          string `mapstructure:"host"`
+	Port          string `mapstructure:"port"`
+	Database_name string `mapstructure:"database_name"`
 }
 
 type AWSConfig struct {
@@ -50,6 +55,17 @@ var (
 	instance *ConfigManager
 	once     sync.Once
 )
+
+func (dc *DatabaseConfig) GetConnectionURL() string {
+	return fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s",
+		dc.Username,
+		dc.Password,
+		dc.Host,
+		dc.Port,
+		dc.Database_name,
+	)
+}
 
 func GetConfigManager() *ConfigManager {
 	once.Do(func() {

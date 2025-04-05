@@ -148,8 +148,10 @@ func (sb *ServerBuilder) InitDatabase() *ServerBuilder {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	URL := sb.config.Database.GetConnectionURL()
+
 	sb.dbManager = db.GetDBManager()
-	if err := sb.dbManager.Connect(ctx, sb.config.Database.URL); err != nil {
+	if err := sb.dbManager.Connect(ctx, URL); err != nil {
 		sb.err = fmt.Errorf("failed to connect to database: %w", err)
 		return sb
 	}
