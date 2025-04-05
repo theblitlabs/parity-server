@@ -21,7 +21,11 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	URL string `mapstructure:"url"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	Host string `mapstructure:"host"`
+	Port string `mapstructure:"port"`
+	Database_name string `mapstructure:"database_name"`
 }
 
 type AWSConfig struct {
