@@ -126,21 +126,29 @@ func loadConfigFile(path string) (*Config, error) {
 	var config Config
 
 	// Bind environment variables
-	v.BindEnv("SERVER_HOST")
-	v.BindEnv("SERVER_PORT")
-	v.BindEnv("SERVER_ENDPOINT")
-	v.BindEnv("DATABASE_USERNAME")
-	v.BindEnv("DATABASE_PASSWORD")
-	v.BindEnv("DATABASE_HOST")
-	v.BindEnv("DATABASE_PORT")
-	v.BindEnv("DATABASE_DATABASE_NAME")
-	v.BindEnv("AWS_REGION")
-	v.BindEnv("AWS_BUCKET_NAME")
-	v.BindEnv("ETHEREUM_RPC")
-	v.BindEnv("ETHEREUM_CHAIN_ID")
-	v.BindEnv("ETHEREUM_TOKEN_ADDRESS")
-	v.BindEnv("ETHEREUM_STAKE_WALLET_ADDRESS")
-	v.BindEnv("SCHEDULER_INTERVAL")
+	envVars := []string{
+		"SERVER_HOST",
+		"SERVER_PORT",
+		"SERVER_ENDPOINT",
+		"DATABASE_USERNAME",
+		"DATABASE_PASSWORD",
+		"DATABASE_HOST",
+		"DATABASE_PORT",
+		"DATABASE_DATABASE_NAME",
+		"AWS_REGION",
+		"AWS_BUCKET_NAME",
+		"ETHEREUM_RPC",
+		"ETHEREUM_CHAIN_ID",
+		"ETHEREUM_TOKEN_ADDRESS",
+		"ETHEREUM_STAKE_WALLET_ADDRESS",
+		"SCHEDULER_INTERVAL",
+	}
+
+	for _, env := range envVars {
+		if err := v.BindEnv(env); err != nil {
+			return nil, fmt.Errorf("failed to bind env var %s: %w", env, err)
+		}
+	}
 
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("unable to decode into config struct: %w", err)
