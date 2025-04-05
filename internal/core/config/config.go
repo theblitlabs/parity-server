@@ -114,7 +114,7 @@ func (cm *ConfigManager) ReloadConfig() (*Config, error) {
 
 func loadConfigFile(path string) (*Config, error) {
 	v := viper.New()
-	
+
 	v.SetEnvPrefix("")
 	v.AutomaticEnv()
 

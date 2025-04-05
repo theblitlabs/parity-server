@@ -44,11 +44,23 @@ sensitive_patterns=('.env' '*.pem' '*.key' '*_rsa' '*_dsa' '*.p12' '*.pfx')
 sensitive_found=false
 
 # Only check files that are actually being committed (respects .gitignore)
+exception_patterns=('.env.sample' '.env.example' '.env.template' '.env.test')
 for file in $STAGED_FILES; do
   for pattern in "${sensitive_patterns[@]}"; do
     if [[ "$file" == *$pattern* ]]; then
-      echo "Error: Potentially sensitive file found: $file"
-      sensitive_found=true
+      # Check if file matches any exception pattern
+      exception_found=false
+      for exception in "${exception_patterns[@]}"; do
+        if [[ "$file" == *$exception* ]]; then
+          exception_found=true
+          break
+        fi
+      done
+      
+      if [ "$exception_found" = false ]; then
+        echo "Error: Potentially sensitive file found: $file"
+        sensitive_found=true
+      fi
     fi
   done
 done
