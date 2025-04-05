@@ -115,17 +115,14 @@ func (cm *ConfigManager) ReloadConfig() (*Config, error) {
 func loadConfigFile(path string) (*Config, error) {
 	v := viper.New()
 	
-	// Configure Viper to read environment variables
 	v.SetEnvPrefix("")
 	v.AutomaticEnv()
 
-	// Read the .env file
 	v.SetConfigFile(path)
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("error reading config file: %w", err)
 	}
 
-	// Create config instance
 	var config Config
 
 	// Bind environment variables
@@ -145,7 +142,6 @@ func loadConfigFile(path string) (*Config, error) {
 	v.BindEnv("ETHEREUM_STAKE_WALLET_ADDRESS")
 	v.BindEnv("SCHEDULER_INTERVAL")
 
-	// Unmarshal config
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("unable to decode into config struct: %w", err)
 	}
