@@ -8,41 +8,41 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig    `mapstructure:"server"`
-	Database  DatabaseConfig  `mapstructure:"database"`
-	Ethereum  EthereumConfig  `mapstructure:"ethereum"`
-	AWS       AWSConfig       `mapstructure:"aws"`
-	Scheduler SchedulerConfig `mapstructure:"scheduler"`
+	Server    ServerConfig    `mapstructure:"SERVER"`
+	Database  DatabaseConfig  `mapstructure:"DATABASE"`
+	Ethereum  EthereumConfig  `mapstructure:"ETHEREUM"`
+	AWS       AWSConfig       `mapstructure:"AWS"`
+	Scheduler SchedulerConfig `mapstructure:"SCHEDULER"`
 }
 
 type ServerConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     string `mapstructure:"port"`
-	Endpoint string `mapstructure:"endpoint"`
+	Host     string `mapstructure:"HOST"`
+	Port     string `mapstructure:"PORT"`
+	Endpoint string `mapstructure:"ENDPOINT"`
 }
 
 type DatabaseConfig struct {
-	Username      string `mapstructure:"username"`
-	Password      string `mapstructure:"password"`
-	Host          string `mapstructure:"host"`
-	Port          string `mapstructure:"port"`
-	Database_name string `mapstructure:"database_name"`
+	Username      string `mapstructure:"USERNAME"`
+	Password      string `mapstructure:"PASSWORD"`
+	Host          string `mapstructure:"HOST"`
+	Port          string `mapstructure:"PORT"`
+	Database_name string `mapstructure:"DATABASE_NAME"`
 }
 
 type AWSConfig struct {
-	Region     string `mapstructure:"region"`
-	BucketName string `mapstructure:"bucket_name"`
+	Region     string `mapstructure:"REGION"`
+	BucketName string `mapstructure:"BUCKET_NAME"`
 }
 
 type EthereumConfig struct {
-	RPC                string `mapstructure:"rpc"`
-	ChainID            int64  `mapstructure:"chain_id"`
-	TokenAddress       string `mapstructure:"token_address"`
-	StakeWalletAddress string `mapstructure:"stake_wallet_address"`
+	RPC                string `mapstructure:"RPC"`
+	ChainID            int64  `mapstructure:"CHAIN_ID"`
+	TokenAddress       string `mapstructure:"TOKEN_ADDRESS"`
+	StakeWalletAddress string `mapstructure:"STAKE_WALLET_ADDRESS"`
 }
 
 type SchedulerConfig struct {
-	Interval int `mapstructure:"interval"`
+	Interval int `mapstructure:"INTERVAL"`
 }
 
 type ConfigManager struct {
@@ -70,7 +70,7 @@ func (dc *DatabaseConfig) GetConnectionURL() string {
 func GetConfigManager() *ConfigManager {
 	once.Do(func() {
 		instance = &ConfigManager{
-			configPath: "config/config.yaml", // Default path
+			configPath: ".env",
 		}
 	})
 	return instance
@@ -113,16 +113,45 @@ func (cm *ConfigManager) ReloadConfig() (*Config, error) {
 }
 
 func loadConfigFile(path string) (*Config, error) {
-	viper.SetConfigFile(path)
-	viper.AutomaticEnv()
+	v := viper.New()
 
-	if err := viper.ReadInConfig(); err != nil {
-		return nil, err
+	v.SetEnvPrefix("")
+	v.AutomaticEnv()
+
+	v.SetConfigFile(path)
+	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("error reading config file: %w", err)
 	}
 
 	var config Config
-	if err := viper.Unmarshal(&config); err != nil {
-		return nil, err
+
+	// Bind environment variables
+	envVars := []string{
+		"SERVER_HOST",
+		"SERVER_PORT",
+		"SERVER_ENDPOINT",
+		"DATABASE_USERNAME",
+		"DATABASE_PASSWORD",
+		"DATABASE_HOST",
+		"DATABASE_PORT",
+		"DATABASE_DATABASE_NAME",
+		"AWS_REGION",
+		"AWS_BUCKET_NAME",
+		"ETHEREUM_RPC",
+		"ETHEREUM_CHAIN_ID",
+		"ETHEREUM_TOKEN_ADDRESS",
+		"ETHEREUM_STAKE_WALLET_ADDRESS",
+		"SCHEDULER_INTERVAL",
+	}
+
+	for _, env := range envVars {
+		if err := v.BindEnv(env); err != nil {
+			return nil, fmt.Errorf("failed to bind env var %s: %w", env, err)
+		}
+	}
+
+	if err := v.Unmarshal(&config); err != nil {
+		return nil, fmt.Errorf("unable to decode into config struct: %w", err)
 	}
 
 	return &config, nil

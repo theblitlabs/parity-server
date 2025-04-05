@@ -36,7 +36,7 @@ LINT_FLAGS := --timeout=5m
 LINT_CONFIG := .golangci.yml
 LINT_OUTPUT_FORMAT := colored-line-number
 
-.PHONY: all build test run clean deps fmt help docker-up docker-down docker-logs docker-build docker-clean install-air watch tools install uninstall install-lint-tools lint install-hooks
+.PHONY: all build test run clean deps fmt help docker-up docker-down docker-logs docker-build docker-clean install-air watch tools install uninstall install-lint-tools lint install-hooks migrate-env
 
 all: clean build
 
@@ -164,5 +164,8 @@ uninstall: ## Remove parity command from system
 	@echo "Uninstalling parity from $(INSTALL_PATH)..."
 	@sudo rm -f $(INSTALL_PATH)/$(BINARY_NAME)
 	@echo "Uninstallation complete"
+
+migrate-env: ## Migrate config.yaml to .env file
+	$(GORUN) scripts/migrate_env.go
 
 .DEFAULT_GOAL := help
