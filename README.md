@@ -8,6 +8,7 @@ A decentralized compute network enabling trustless task execution with token inc
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Development](#development)
+- [Docker Setup](#docker-setup)
 - [Configuration](#configuration)
 - [CLI Usage](#cli-usage)
 - [API Documentation](#api-documentation)
@@ -20,10 +21,10 @@ A decentralized compute network enabling trustless task execution with token inc
 
 ### Prerequisites
 
-- Go 1.22.7 or higher (using Go toolchain 1.23.4)
-- PostgreSQL 14.0 or higher
+- Go 1.24 or higher (using Go toolchain 1.24)
+- PostgreSQL 15.0 or higher
 - Make
-- Docker (optional, for containerized database)
+- Docker
 - Git
 
 ### Installation
@@ -41,33 +42,11 @@ cd parity-server
 make deps
 ```
 
-3. Set up the database:
-
-Using Docker (recommended for development):
+3. Set up your environment:
 
 ```bash
-# Remove existing container if it exists
-docker rm -f parity-db || true
-
-# Start new PostgreSQL container
-docker run --name parity-db \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=parity \
-  -p 5432:5432 \
-  -d postgres:14
-```
-
-Or using local PostgreSQL:
-
-```bash
-createdb parity
-```
-
-4. Create and configure your environment:
-
-```bash
-cp config/config.example.yaml config/config.yaml
-# Edit config/config.yaml with your settings
+cp .env.example .env
+# Edit .env with your settings
 ```
 
 ### Development
@@ -75,73 +54,121 @@ cp config/config.example.yaml config/config.yaml
 The project includes several helpful Makefile commands for development:
 
 ```bash
+# Build and Run
 make build          # Build the application
 make run           # Run the application
 make clean         # Clean build files
 make deps          # Download dependencies
+
+# Code Quality
 make fmt           # Format code using gofumpt (preferred) or gofmt
 make imports       # Fix imports formatting
 make format        # Run all formatters (gofumpt + goimports)
 make lint          # Run linters
 make format-lint   # Format code and run linters in one step
 make check-format  # Check code formatting without applying changes
+
+# Development Tools
 make install-lint-tools # Install formatting and linting tools
 make watch         # Run with hot reload (requires air)
 make install       # Install parity command globally
 make uninstall     # Remove parity command from system
+
+# Docker Commands
+make docker-build  # Build Docker image
+make docker-up     # Start Docker containers
+make docker-down   # Stop Docker containers
+make docker-logs   # View Docker container logs
+make docker-clean  # Remove Docker containers, images, and volumes
+make docker-ps     # List running Docker containers
+make docker-exec   # Execute command in Docker container
+
 make help          # Display all available commands
 ```
 
-For hot reloading during development:
+### Docker Setup
+
+The project includes a complete Docker setup for both development and production environments.
+
+#### Using Docker Compose
+
+1. Build and start the services:
 
 ```bash
-# Install air (required for hot reloading)
-make install-air
-
-# Run with hot reload
-make watch
+make docker-build
+make docker-up
 ```
 
-### Configuration
+2. View logs:
 
-Create a `config.yaml` file in the `config` directory using the example provided. Make sure to replace the placeholder values with your own configuration:
-
-```yaml
-server:
-  port: # The port your server will listen on (e.g. 8080)
-  host: # The host to bind to (e.g. localhost)
-  endpoint: # API endpoint prefix (e.g. /api)
-
-database:
-  username: <your_db_username>
-  password: <your_db_password>
-  host: <your_db_host> # e.g. localhost or db container name
-  port: <your_db_port> # e.g. 5432
-  database_name: <your_db_name> # e.g. parity
-
-ethereum:
-  rpc: # Your Ethereum RPC endpoint (e.g. http://localhost:8545)
-  chain_id: # Your blockchain network ID (e.g. 1337 for local, 1 for mainnet)
-  token_address: # The deployed token contract address
-  stake_wallet_address: # The wallet address used for staking
-
-aws:
-  region: # AWS region for your services (e.g. us-east-1)
-  bucket_name: # AWS S3 bucket name for storage
-
-scheduler:
-  interval: # Task scheduler interval (e.g. 10, 30, 60)
+```bash
+make docker-logs
 ```
 
-> **Important**: The above values are examples only. You must replace them with your own configuration values before running the application. Particularly important are:
+3. Stop services:
+
+```bash
+make docker-down
+```
+
+The Docker setup includes:
+
+- PostgreSQL 15-alpine database
+- Parity server application
+- Automatic database health checks
+- Environment variable configuration
+
+#### Environment Configuration
+
+Create a `.env` file with the following configuration:
+
+```env
+# Ethereum Configuration
+ETHEREUM_CHAIN_ID=11155111                                                         # Sepolia testnet
+ETHEREUM_RPC=https://eth-sepolia.g.alchemy.com/v2/API_KEY
+ETHEREUM_STAKE_WALLET_ADDRESS=0x261259e9467E042DBBF372906e17b94fC06942f2        # Stake wallet address
+ETHEREUM_TOKEN_ADDRESS=0x844303bcC1a347bE6B409Ae159b4040d84876024              # Token contract address
+
+# Database Configuration
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=postgres
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_DATABASE_NAME=parity
+
+# AWS Configuration
+AWS_REGION=ap-south-1
+AWS_BUCKET_NAME=dev-parity-docker-images
+
+# Server Configuration
+SERVER_PORT=8080
+SERVER_ENDPOINT=/api
+SERVER_HOST=0.0.0.0
+
+# Runner Configuration
+RUNNER_WEBHOOK_PORT=8080
+RUNNER_API_PREFIX=/api
+RUNNER_SERVER_URL=http://localhost:8080
+
+# Scheduler Configuration
+SCHEDULER_INTERVAL=10
+```
+
+> **Important**: The above configuration shows the current Sepolia testnet setup. Key contract details:
 >
-> - The database URL with your PostgreSQL credentials
-> - The Ethereum RPC endpoint for your network
-> - The correct chain ID for your network
-> - Your deployed token contract address
-> - Your stake wallet address
-> - AWS credentials and region if using S3 storage
-> - Appropriate scheduler interval for your needs
+> - Network: Sepolia Testnet (Chain ID: 11155111)
+> - Token Contract: [`0x844303bcC1a347bE6B409Ae159b4040d84876024`](https://sepolia.etherscan.io/address/0x844303bcC1a347bE6B409Ae159b4040d84876024)
+> - Stake Wallet: [`0x261259e9467E042DBBF372906e17b94fC06942f2`](https://sepolia.etherscan.io/address/0x261259e9467E042DBBF372906e17b94fC06942f2)
+>
+> For production deployment, you should replace these values with your own:
+>
+> - Database credentials
+> - Ethereum RPC endpoint
+> - Network chain ID
+> - Token contract address
+> - Stake wallet address
+> - AWS credentials and region
+> - Scheduler interval
 
 ### CLI Usage
 
@@ -149,21 +176,20 @@ The CLI provides a unified interface through the `parity-server` command:
 
 ```bash
 # Start the server
-parity-server
+parity-server server
+
+# Authenticate
+parity-server auth
+
+# Stake tokens
+parity-server stake --amount 10
+
+# Check balance
+parity-server balance
+
 
 # View all available commands
 parity-server --help
-
-# Get help for a specific command
-parity-server <command> --help
-```
-
-Common commands:
-
-```bash
-parity-server          # Start the server
-parity-server version  # Show version information
-parity-server config   # Show current configuration
 ```
 
 ### API Documentation

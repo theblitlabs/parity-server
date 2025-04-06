@@ -12,6 +12,11 @@ AIR_VERSION=v1.49.0
 GOPATH=$(shell go env GOPATH)
 AIR=$(GOPATH)/bin/air
 
+# Docker parameters
+DOCKER_COMPOSE=docker compose
+DOCKER_IMAGE_NAME=parity-server
+DOCKER_TAG=latest
+
 # Test related variables
 COVERAGE_DIR=coverage
 COVERAGE_PROFILE=$(COVERAGE_DIR)/coverage.out
@@ -36,7 +41,7 @@ LINT_FLAGS := --timeout=5m
 LINT_CONFIG := .golangci.yml
 LINT_OUTPUT_FORMAT := colored-line-number
 
-.PHONY: all build test run clean deps fmt help docker-up docker-down docker-logs docker-build docker-clean install-air watch tools install uninstall install-lint-tools lint install-hooks migrate-env
+.PHONY: all build test run clean deps fmt help docker-up docker-down docker-logs docker-build docker-clean docker-ps docker-exec install-air watch tools install uninstall install-lint-tools lint install-hooks migrate-env
 
 all: clean build
 
@@ -58,13 +63,6 @@ run:  ## Run the application
 server:  ## Start the parity server
 	$(GOCMD) run $(MAIN_PATH) server
 
-runner:  ## Start the task runner
-	$(GOCMD) run $(MAIN_PATH) runner
-
-chain:  ## Start the chain proxy server
-	$(GOCMD) run $(MAIN_PATH) chain
-
-stake:  ## Stake tokens in the network
 	$(GOCMD) run $(MAIN_PATH) stake --amount 10
 
 balance:  ## Check token balances
@@ -167,5 +165,27 @@ uninstall: ## Remove parity command from system
 
 migrate-env: ## Migrate config.yaml to .env file
 	$(GORUN) scripts/migrate_env.go
+
+docker-build: ## Build Docker image
+	docker build -t $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) .
+
+docker-up: ## Start Docker containers
+	$(DOCKER_COMPOSE) up -d
+
+docker-down: ## Stop Docker containers
+	$(DOCKER_COMPOSE) down
+
+docker-logs: ## View Docker container logs
+	$(DOCKER_COMPOSE) logs -f
+
+docker-clean: ## Remove Docker containers, images, and volumes
+	$(DOCKER_COMPOSE) down -v
+	docker rmi $(DOCKER_IMAGE_NAME):$(DOCKER_TAG)
+
+docker-ps: ## List running Docker containers
+	$(DOCKER_COMPOSE) ps
+
+docker-exec: ## Execute command in Docker container (make docker-exec CMD="sh")
+	$(DOCKER_COMPOSE) exec app $(CMD)
 
 .DEFAULT_GOAL := help
