@@ -1,8 +1,6 @@
 module github.com/theblitlabs/parity-server
 
-go 1.23.0
-
-toolchain go1.24.0
+go 1.24.1
 
 replace github.com/theblitlabs/gologger => ./pkg/gologger
 
@@ -13,6 +11,7 @@ replace github.com/theblitlabs/go-wallet-sdk => ./pkg/go-wallet-sdk
 require (
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/config v1.18.45
+	github.com/aws/aws-sdk-go-v2/credentials v1.13.43
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.78.2
 	github.com/drand/drand v1.5.11
 	github.com/ethereum/go-ethereum v1.14.12
@@ -25,6 +24,7 @@ require (
 	github.com/theblitlabs/go-wallet-sdk v0.0.0-00010101000000-000000000000
 	github.com/theblitlabs/gologger v0.0.0-00010101000000-000000000000
 	github.com/theblitlabs/keystore v0.0.0-00010101000000-000000000000
+	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gorm v1.25.12
 )
@@ -45,7 +45,6 @@ require (
 	github.com/BurntSushi/toml v1.3.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.10 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.13.43 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.13 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.34 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.34 // indirect
@@ -141,7 +140,6 @@ require (
 	google.golang.org/grpc v1.59.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 

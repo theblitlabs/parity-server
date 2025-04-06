@@ -190,7 +190,7 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 
 	sb.webhookService = services.NewWebhookService(sb.taskService)
 
-	s3Service, err := services.NewS3Service(sb.config.AWS.BucketName)
+	s3Service, err := services.NewS3Service(sb.config)
 	if err != nil {
 		sb.err = fmt.Errorf("failed to initialize S3 service: %w", err)
 		return sb

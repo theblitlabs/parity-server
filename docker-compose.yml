@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${DATABASE_USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_DATABASE_NAME}
+    ports:
+      - "${DATABASE_PORT}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME} -d ${DATABASE_DATABASE_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    environment:
+      - PRIVATE_KEY=${PRIVATE_KEY}  # This should be provided when running docker-compose
+      - DATABASE_HOST=postgres  # Override to use docker service name
+      - DATABASE_PORT=5432
+      - DATABASE_USERNAME=${DATABASE_USERNAME}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - DATABASE_DATABASE_NAME=${DATABASE_DATABASE_NAME}
+      - ETHEREUM_CHAIN_ID=${ETHEREUM_CHAIN_ID}
+      - ETHEREUM_RPC=${ETHEREUM_RPC}
+      - ETHEREUM_STAKE_WALLET_ADDRESS=${ETHEREUM_STAKE_WALLET_ADDRESS}
+      - ETHEREUM_TOKEN_ADDRESS=${ETHEREUM_TOKEN_ADDRESS}
+      - SERVER_PORT=${SERVER_PORT}
+      - SERVER_ENDPOINT=${SERVER_ENDPOINT}
+      - SERVER_HOST=${SERVER_HOST}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - AWS_BUCKET_NAME=${AWS_BUCKET_NAME}
+    ports:
+      - "${SERVER_PORT}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy

@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/theblitlabs/gologger"
+	"github.com/theblitlabs/parity-server/internal/core/config"
 )
 
 type S3Service struct {
@@ -19,17 +21,38 @@ type S3Service struct {
 	bucketName string
 }
 
-func NewS3Service(bucketName string) (*S3Service, error) {
-	cfg, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("unable to load SDK config: %w", err)
+func NewS3Service(cfg *config.Config) (*S3Service, error) {
+	if cfg.AWS.AccessKeyID == "" || cfg.AWS.SecretAccessKey == "" {
+		return nil, fmt.Errorf("missing required AWS credentials")
 	}
 
-	client := s3.NewFromConfig(cfg)
+	if cfg.AWS.Region == "" {
+		return nil, fmt.Errorf("AWS region must be specified")
+	}
+
+	if cfg.AWS.BucketName == "" {
+		return nil, fmt.Errorf("AWS bucket name must be specified")
+	}
+
+	creds := credentials.NewStaticCredentialsProvider(
+		cfg.AWS.AccessKeyID,
+		cfg.AWS.SecretAccessKey,
+		"", // Token is intentionally empty for long-term credentials
+	)
+
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.AWS.Region),
+		awsconfig.WithCredentialsProvider(creds),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to load AWS SDK config: %w", err)
+	}
+
+	client := s3.NewFromConfig(awsCfg)
 
 	return &S3Service{
 		client:     client,
-		bucketName: bucketName,
+		bucketName: cfg.AWS.BucketName,
 	}, nil
 }
 

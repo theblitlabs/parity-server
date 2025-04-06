@@ -63,7 +63,7 @@ func main() {
 	}
 
 	// Write to .env file
-	if err := os.WriteFile(".env", []byte(envContent.String()), 0644); err != nil {
+	if err := os.WriteFile(".env", []byte(envContent.String()), 0o644); err != nil {
 		fmt.Printf("Error writing .env file: %v\n", err)
 		os.Exit(1)
 	}

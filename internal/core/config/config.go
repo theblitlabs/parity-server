@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -22,16 +23,18 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	Username      string `mapstructure:"USERNAME"`
-	Password      string `mapstructure:"PASSWORD"`
-	Host          string `mapstructure:"HOST"`
-	Port          string `mapstructure:"PORT"`
-	Database_name string `mapstructure:"DATABASE_NAME"`
+	Username     string `mapstructure:"USERNAME"`
+	Password     string `mapstructure:"PASSWORD"`
+	Host         string `mapstructure:"HOST"`
+	Port         string `mapstructure:"PORT"`
+	DatabaseName string `mapstructure:"DATABASE_NAME"`
 }
 
 type AWSConfig struct {
-	Region     string `mapstructure:"REGION"`
-	BucketName string `mapstructure:"BUCKET_NAME"`
+	Region          string `mapstructure:"REGION"`
+	BucketName      string `mapstructure:"BUCKET_NAME"`
+	AccessKeyID     string `mapstructure:"ACCESS_KEY_ID"`
+	SecretAccessKey string `mapstructure:"SECRET_ACCESS_KEY"`
 }
 
 type EthereumConfig struct {
@@ -63,7 +66,7 @@ func (dc *DatabaseConfig) GetConnectionURL() string {
 		dc.Password,
 		dc.Host,
 		dc.Port,
-		dc.Database_name,
+		dc.DatabaseName,
 	)
 }
 
@@ -115,43 +118,56 @@ func (cm *ConfigManager) ReloadConfig() (*Config, error) {
 func loadConfigFile(path string) (*Config, error) {
 	v := viper.New()
 
+	v.SetConfigFile(path)
 	v.SetEnvPrefix("")
 	v.AutomaticEnv()
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
-	v.SetConfigFile(path)
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("error reading config file: %w", err)
 	}
 
+	v.SetDefault("SERVER", map[string]interface{}{
+		"HOST":     v.GetString("SERVER_HOST"),
+		"PORT":     v.GetString("SERVER_PORT"),
+		"ENDPOINT": v.GetString("SERVER_ENDPOINT"),
+	})
+
+	v.SetDefault("DATABASE", map[string]interface{}{
+		"USERNAME":      v.GetString("DATABASE_USERNAME"),
+		"PASSWORD":      v.GetString("DATABASE_PASSWORD"),
+		"HOST":          v.GetString("DATABASE_HOST"),
+		"PORT":          v.GetString("DATABASE_PORT"),
+		"DATABASE_NAME": v.GetString("DATABASE_DATABASE_NAME"),
+	})
+
+	v.SetDefault("AWS", map[string]interface{}{
+		"REGION":            v.GetString("AWS_REGION"),
+		"BUCKET_NAME":       v.GetString("AWS_BUCKET_NAME"),
+		"ACCESS_KEY_ID":     v.GetString("AWS_ACCESS_KEY_ID"),
+		"SECRET_ACCESS_KEY": v.GetString("AWS_SECRET_ACCESS_KEY"),
+	})
+
+	v.SetDefault("ETHEREUM", map[string]interface{}{
+		"RPC":                  v.GetString("ETHEREUM_RPC"),
+		"CHAIN_ID":             v.GetInt64("ETHEREUM_CHAIN_ID"),
+		"TOKEN_ADDRESS":        v.GetString("ETHEREUM_TOKEN_ADDRESS"),
+		"STAKE_WALLET_ADDRESS": v.GetString("ETHEREUM_STAKE_WALLET_ADDRESS"),
+	})
+
+	v.SetDefault("SCHEDULER", map[string]interface{}{
+		"INTERVAL": v.GetInt("SCHEDULER_INTERVAL"),
+	})
+
 	var config Config
-
-	// Bind environment variables
-	envVars := []string{
-		"SERVER_HOST",
-		"SERVER_PORT",
-		"SERVER_ENDPOINT",
-		"DATABASE_USERNAME",
-		"DATABASE_PASSWORD",
-		"DATABASE_HOST",
-		"DATABASE_PORT",
-		"DATABASE_DATABASE_NAME",
-		"AWS_REGION",
-		"AWS_BUCKET_NAME",
-		"ETHEREUM_RPC",
-		"ETHEREUM_CHAIN_ID",
-		"ETHEREUM_TOKEN_ADDRESS",
-		"ETHEREUM_STAKE_WALLET_ADDRESS",
-		"SCHEDULER_INTERVAL",
-	}
-
-	for _, env := range envVars {
-		if err := v.BindEnv(env); err != nil {
-			return nil, fmt.Errorf("failed to bind env var %s: %w", env, err)
-		}
-	}
-
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("unable to decode into config struct: %w", err)
+	}
+
+	if config.Database.Username == "" || config.Database.Password == "" ||
+		config.Database.Host == "" || config.Database.Port == "" ||
+		config.Database.DatabaseName == "" {
+		return nil, fmt.Errorf("missing required database configuration")
 	}
 
 	return &config, nil

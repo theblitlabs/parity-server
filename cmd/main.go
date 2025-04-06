@@ -24,12 +24,12 @@ var rootCmd = &cobra.Command{
 	
 This server manages tasks, runners, and rewards in the Parity Protocol network.
 Configuration can be loaded from a file specified by the --config flag.
-The default config path is "config/config.yaml".`,
+The default config path is ".env".`,
 	Example: `  # Run with default config
   parity-server
   
   # Run with custom config
-  parity-server --config /path/to/config.yaml`,
+  parity-server --config /path/to/.env`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		switch logMode {
 		case "debug", "pretty", "info", "prod", "test":
@@ -60,7 +60,7 @@ func ExecuteServer() error {
 }
 
 func init() {
-	configPath = "config/config.yaml"
+	configPath = ".env"
 
 	if envPath := os.Getenv("PARITY_CONFIG_PATH"); envPath != "" {
 		configPath = envPath
@@ -68,6 +68,11 @@ func init() {
 
 	configManager := config.GetConfigManager()
 	configManager.SetConfigPath(configPath)
+
+	// Load config immediately to catch any errors early
+	if _, err := configManager.GetConfig(); err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", configPath, "Path to config file")
 	rootCmd.PersistentFlags().StringVar(&logMode, "log", "pretty", "Log mode: debug, pretty, info, prod, test")
@@ -87,7 +92,7 @@ var serverCmd = &cobra.Command{
   parity-server server
   
   # Start server with custom config
-  parity-server server --config /path/to/config.yaml`,
+  parity-server server --config /path/to/.env`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cli.RunServer()
 	},
@@ -100,7 +105,7 @@ var authCmd = &cobra.Command{
   parity-server auth --private-key YOUR_PRIVATE_KEY
   
   # Authenticate with custom config
-  parity-server auth --private-key YOUR_PRIVATE_KEY --config /path/to/config.yaml`,
+  parity-server auth --private-key YOUR_PRIVATE_KEY --config /path/to/.env`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cli.RunAuth()
 	},
