@@ -21,25 +21,38 @@ type S3Service struct {
 	bucketName string
 }
 
-func NewS3Service(appConfig *config.Config) (*S3Service, error) {
+func NewS3Service(cfg *config.Config) (*S3Service, error) {
+	if cfg.AWS.AccessKeyID == "" || cfg.AWS.SecretAccessKey == "" {
+		return nil, fmt.Errorf("missing required AWS credentials")
+	}
+
+	if cfg.AWS.Region == "" {
+		return nil, fmt.Errorf("AWS region must be specified")
+	}
+
+	if cfg.AWS.BucketName == "" {
+		return nil, fmt.Errorf("AWS bucket name must be specified")
+	}
+
+	creds := credentials.NewStaticCredentialsProvider(
+		cfg.AWS.AccessKeyID,
+		cfg.AWS.SecretAccessKey,
+		"", // Token is intentionally empty for long-term credentials
+	)
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(appConfig.AWS.Region),
-		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			appConfig.AWS.AccessKeyID,
-			appConfig.AWS.SecretAccessKey,
-			"",
-		)),
+		awsconfig.WithRegion(cfg.AWS.Region),
+		awsconfig.WithCredentialsProvider(creds),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("unable to load SDK config: %w", err)
+		return nil, fmt.Errorf("unable to load AWS SDK config: %w", err)
 	}
 
 	client := s3.NewFromConfig(awsCfg)
 
 	return &S3Service{
 		client:     client,
-		bucketName: appConfig.AWS.BucketName,
+		bucketName: cfg.AWS.BucketName,
 	}, nil
 }
 

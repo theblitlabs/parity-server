@@ -23,17 +23,17 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	Username      string `mapstructure:"USERNAME"`
-	Password      string `mapstructure:"PASSWORD"`
-	Host          string `mapstructure:"HOST"`
-	Port          string `mapstructure:"PORT"`
-	Database_name string `mapstructure:"DATABASE_NAME"`
+	Username     string `mapstructure:"USERNAME"`
+	Password     string `mapstructure:"PASSWORD"`
+	Host         string `mapstructure:"HOST"`
+	Port         string `mapstructure:"PORT"`
+	DatabaseName string `mapstructure:"DATABASE_NAME"`
 }
 
 type AWSConfig struct {
-	Region         string `mapstructure:"REGION"`
-	BucketName     string `mapstructure:"BUCKET_NAME"`
-	AccessKeyID    string `mapstructure:"ACCESS_KEY_ID"`
+	Region          string `mapstructure:"REGION"`
+	BucketName      string `mapstructure:"BUCKET_NAME"`
+	AccessKeyID     string `mapstructure:"ACCESS_KEY_ID"`
 	SecretAccessKey string `mapstructure:"SECRET_ACCESS_KEY"`
 }
 
@@ -66,7 +66,7 @@ func (dc *DatabaseConfig) GetConnectionURL() string {
 		dc.Password,
 		dc.Host,
 		dc.Port,
-		dc.Database_name,
+		dc.DatabaseName,
 	)
 }
 
@@ -142,9 +142,9 @@ func loadConfigFile(path string) (*Config, error) {
 	})
 
 	v.SetDefault("AWS", map[string]interface{}{
-		"REGION":          v.GetString("AWS_REGION"),
-		"BUCKET_NAME":     v.GetString("AWS_BUCKET_NAME"),
-		"ACCESS_KEY_ID":   v.GetString("AWS_ACCESS_KEY_ID"),
+		"REGION":            v.GetString("AWS_REGION"),
+		"BUCKET_NAME":       v.GetString("AWS_BUCKET_NAME"),
+		"ACCESS_KEY_ID":     v.GetString("AWS_ACCESS_KEY_ID"),
 		"SECRET_ACCESS_KEY": v.GetString("AWS_SECRET_ACCESS_KEY"),
 	})
 
@@ -166,7 +166,7 @@ func loadConfigFile(path string) (*Config, error) {
 
 	if config.Database.Username == "" || config.Database.Password == "" ||
 		config.Database.Host == "" || config.Database.Port == "" ||
-		config.Database.Database_name == "" {
+		config.Database.DatabaseName == "" {
 		return nil, fmt.Errorf("missing required database configuration")
 	}
 
