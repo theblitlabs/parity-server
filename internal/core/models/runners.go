@@ -7,16 +7,16 @@ import (
 )
 
 type Runner struct {
-	ID            uint         `gorm:"primaryKey;autoIncrement"`
-	DeviceID      string       `gorm:"type:varchar(255);unique"`
-	WalletAddress string       `gorm:"type:varchar(42)"`
-	Status        RunnerStatus `gorm:"type:varchar(255)"`
-	Webhook       string       `gorm:"type:varchar(255)"`
-	TaskID        *uuid.UUID   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
-	Task          *Task        `gorm:"foreignKey:TaskID"`
-	LastHeartbeat time.Time    `gorm:"type:timestamp;default:now()"`
-	CreatedAt     time.Time    `gorm:"autoCreateTime"`
-	UpdatedAt     time.Time    `gorm:"autoUpdateTime"`
+	ID            uint         `json:"id" gorm:"primaryKey;autoIncrement"`
+	DeviceID      string       `json:"device_id" gorm:"type:varchar(255);unique"`
+	WalletAddress string       `json:"wallet_address" gorm:"type:varchar(42)"`
+	Status        RunnerStatus `json:"status" gorm:"type:varchar(255)"`
+	Webhook       string       `json:"webhook" gorm:"type:varchar(255)"`
+	TaskID        *uuid.UUID   `json:"task_id,omitempty" gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
+	Task          *Task        `json:"task,omitempty" gorm:"foreignKey:TaskID"`
+	LastHeartbeat time.Time    `json:"last_heartbeat" gorm:"type:timestamp;default:now()"`
+	CreatedAt     time.Time    `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt     time.Time    `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 type RunnerStatus string

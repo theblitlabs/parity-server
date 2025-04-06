@@ -49,9 +49,6 @@ func (r *TaskResult) Validate() error {
 	if r.TaskID == uuid.Nil {
 		return errors.New("task ID is required")
 	}
-	if r.DeviceID == "" {
-		return errors.New("device ID is required")
-	}
 	if r.DeviceIDHash == "" {
 		return errors.New("device ID hash is required")
 	}

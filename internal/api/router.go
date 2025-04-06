@@ -51,7 +51,7 @@ func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler) {
 	runners.POST("/tasks/:id/result", taskHandler.SaveTaskResult)
 
 	runners.POST("/webhooks", taskHandler.RegisterWebhook)
-	runners.DELETE("/webhooks/:device_id", taskHandler.UnregisterWebhook)
+	runners.DELETE("/webhooks", taskHandler.UnregisterWebhook)
 
 	runners.POST("", taskHandler.RegisterRunner)
 	runners.POST("/heartbeat", taskHandler.RunnerHeartbeat)

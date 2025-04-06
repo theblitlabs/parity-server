@@ -808,7 +808,7 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Runner-ID", runner.DeviceID)
+	req.Header.Set("X-Device-ID", runner.DeviceID)
 
 	client := &http.Client{
 		Transport: &http.Transport{
