@@ -31,8 +31,10 @@ type DatabaseConfig struct {
 }
 
 type AWSConfig struct {
-	Region     string `mapstructure:"REGION"`
-	BucketName string `mapstructure:"BUCKET_NAME"`
+	Region         string `mapstructure:"REGION"`
+	BucketName     string `mapstructure:"BUCKET_NAME"`
+	AccessKeyID    string `mapstructure:"ACCESS_KEY_ID"`
+	SecretAccessKey string `mapstructure:"SECRET_ACCESS_KEY"`
 }
 
 type EthereumConfig struct {
@@ -140,8 +142,10 @@ func loadConfigFile(path string) (*Config, error) {
 	})
 
 	v.SetDefault("AWS", map[string]interface{}{
-		"REGION":      v.GetString("AWS_REGION"),
-		"BUCKET_NAME": v.GetString("AWS_BUCKET_NAME"),
+		"REGION":          v.GetString("AWS_REGION"),
+		"BUCKET_NAME":     v.GetString("AWS_BUCKET_NAME"),
+		"ACCESS_KEY_ID":   v.GetString("AWS_ACCESS_KEY_ID"),
+		"SECRET_ACCESS_KEY": v.GetString("AWS_SECRET_ACCESS_KEY"),
 	})
 
 	v.SetDefault("ETHEREUM", map[string]interface{}{

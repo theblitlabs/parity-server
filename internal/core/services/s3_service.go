@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/theblitlabs/gologger"
+	"github.com/theblitlabs/parity-server/internal/core/config"
 )
 
 type S3Service struct {
@@ -19,17 +21,25 @@ type S3Service struct {
 	bucketName string
 }
 
-func NewS3Service(bucketName string) (*S3Service, error) {
-	cfg, err := config.LoadDefaultConfig(context.Background())
+func NewS3Service(appConfig *config.Config) (*S3Service, error) {
+
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(appConfig.AWS.Region),
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			appConfig.AWS.AccessKeyID,
+			appConfig.AWS.SecretAccessKey,
+			"",
+		)),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load SDK config: %w", err)
 	}
 
-	client := s3.NewFromConfig(cfg)
+	client := s3.NewFromConfig(awsCfg)
 
 	return &S3Service{
 		client:     client,
-		bucketName: bucketName,
+		bucketName: appConfig.AWS.BucketName,
 	}, nil
 }
 
