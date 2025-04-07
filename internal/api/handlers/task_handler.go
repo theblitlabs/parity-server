@@ -334,7 +334,10 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	task.Nonce = nonce
 
 	if err := h.checkStakeBalance(task); err != nil {
-		log.Error().Err(err).Str("device_id", deviceID).Msg("Insufficient stake balance")
+		log.Error().Err(err).
+			Str("device_id", deviceID).
+			Str("creator_address", task.CreatorAddress).
+			Msg("Stake validation failed")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -439,52 +442,24 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 		return fmt.Errorf("stake wallet not initialized")
 	}
 
-	info, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
+	info, err := h.stakeWallet.GetStakeInfo(task.CreatorAddress)
 	if err != nil {
 		return fmt.Errorf("failed to get stake info: %v", err)
 	}
 
 	if !info.Exists {
-		return fmt.Errorf("creator device not registered - please stake first")
+		return fmt.Errorf("wallet %s is not registered in the staking contract - please stake PRTY tokens first", task.CreatorAddress)
 	}
 
-	if info.Amount.Cmp(big.NewInt(0)) < 0 {
-		return fmt.Errorf("no stake found - please stake some PRTY first")
+	minRequiredStake := big.NewInt(10)
+	if info.Amount.Cmp(minRequiredStake) <= 0 {
+		return fmt.Errorf("insufficient stake balance for wallet %s - current balance: %v PRTY, minimum required: %v PRTY",
+			task.CreatorAddress,
+			info.Amount.String(),
+			minRequiredStake.String())
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
-	doneCh := make(chan struct {
-		info walletsdk.StakeInfo
-		err  error
-	})
-
-	go func() {
-		info, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
-		doneCh <- struct {
-			info walletsdk.StakeInfo
-			err  error
-		}{info, err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return fmt.Errorf("stake check timed out: %v", ctx.Err())
-	case result := <-doneCh:
-		if result.err != nil {
-			return fmt.Errorf("failed to get stake info: %v", result.err)
-		}
-
-		if !result.info.Exists {
-			return fmt.Errorf("creator device not registered - please stake first")
-		}
-
-		if result.info.Amount.Cmp(big.NewInt(0)) < 0 {
-			return fmt.Errorf("no stake found - please stake some PRTY first")
-		}
-
-		return nil
-	}
+	return nil
 }
 
 func (h *TaskHandler) ListTasks(c *gin.Context) {
