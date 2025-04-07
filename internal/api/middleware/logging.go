@@ -25,31 +25,38 @@ func Logging() gin.HandlerFunc {
 			path = path + "?" + raw
 		}
 
-		log := gologger.Get().With().
-			Str("request_id", requestID).
-			Str("method", c.Request.Method).
-			Str("path", path).
-			Str("remote_addr", c.Request.RemoteAddr).
-			Str("hostname", hostname).
-			Logger()
+		// Skip logging successful heartbeat requests
+		isHeartbeat := path == "/api/runners/heartbeat"
 
-		log.Info().Msg("→ Request received")
+		if !isHeartbeat {
+			log := gologger.Get().With().
+				Str("request_id", requestID).
+				Str("method", c.Request.Method).
+				Str("path", path).
+				Str("remote_addr", c.Request.RemoteAddr).
+				Str("hostname", hostname).
+				Logger()
+			log.Info().Msg("→ Request received")
+		}
 
 		c.Next()
 
-		// Skip successful heartbeat logs to reduce noise
-		isHeartbeat := c.Request.URL.Path == "/runners/heartbeat"
 		if !isHeartbeat || (isHeartbeat && c.Writer.Status() != 200) {
-			respLog := log.With().
+			log := gologger.Get().With().
+				Str("request_id", requestID).
+				Str("method", c.Request.Method).
+				Str("path", path).
+				Str("remote_addr", c.Request.RemoteAddr).
+				Str("hostname", hostname).
 				Int("status", c.Writer.Status()).
 				Dur("duration", time.Since(start)).
 				Int("body_size", c.Writer.Size()).
 				Logger()
 
 			if c.Writer.Status() >= 400 {
-				respLog.Error().Msg("← Request failed")
+				log.Error().Msg("← Request failed")
 			} else {
-				respLog.Info().Msg("← Request completed")
+				log.Info().Msg("← Request completed")
 			}
 		}
 	}
