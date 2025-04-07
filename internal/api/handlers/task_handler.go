@@ -25,13 +25,11 @@ type WebhookRegistration struct {
 	ID        string    `json:"id"`
 	URL       string    `json:"url"`
 	RunnerID  string    `json:"runner_id"`
-	DeviceID  string    `json:"device_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type RegisterWebhookRequest struct {
-	URL      string `json:"url"`
-	DeviceID string `json:"device_id"`
+	URL string `json:"url"`
 }
 
 type WSMessage struct {
@@ -93,27 +91,41 @@ func (h *TaskHandler) RegisterWebhook(c *gin.Context) {
 		return
 	}
 
-	runner, err := h.runnerService.CreateOrUpdateRunner(c.Request.Context(), &models.Runner{
-		DeviceID:      req.DeviceID,
+	deviceID := c.GetHeader("X-Device-ID")
+	if deviceID == "" {
+		log.Error().Msg("X-Device-ID header is required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-Device-ID header is required"})
+		return
+	}
+
+	_, err := h.runnerService.CreateOrUpdateRunner(c.Request.Context(), &models.Runner{
+		DeviceID:      deviceID,
 		Status:        models.RunnerStatusOnline,
 		Webhook:       req.URL,
 		WalletAddress: req.WalletAddress,
 	})
 	if err != nil {
-		log.Error().Err(err).Str("device_id", req.DeviceID).Msg("Failed to create/update runner")
+		log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to create/update runner")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	webhookID, err := h.webhookService.RegisterWebhook(req, deviceID)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to register webhook")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
-		"id": fmt.Sprintf("%d", runner.ID),
+		"id": webhookID,
 	})
 }
 
 func (h *TaskHandler) UnregisterWebhook(c *gin.Context) {
-	deviceID := c.Param("device_id")
+	deviceID := c.GetHeader("X-Device-ID")
 	if deviceID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "X-Device-ID header is required"})
 		return
 	}
 
@@ -650,27 +662,59 @@ func (h *TaskHandler) CleanupResources() {
 
 func (h *TaskHandler) RegisterRunner(c *gin.Context) {
 	var runner models.Runner
+	log := gologger.WithComponent("task_handler")
+
+	rawBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to read request body")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
+		return
+	}
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(rawBody))
+
+	log.Info().Str("raw_body", string(rawBody)).Msg("Incoming request body")
+
 	if err := c.ShouldBindJSON(&runner); err != nil {
+		log.Error().Err(err).Msg("Invalid request body")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	if runner.DeviceID == "" {
+	log.Info().Fields(map[string]interface{}{
+		"wallet_address": runner.WalletAddress,
+		"webhook":        runner.Webhook,
+		"status":         runner.Status,
+	}).Msg("Parsed request body")
+
+	deviceID := c.GetHeader("X-Device-ID")
+	if deviceID == "" {
+		log.Error().Msg("X-Device-ID header is missing")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
 		return
 	}
 
 	if runner.WalletAddress == "" {
+		log.Error().Msg("Wallet address is missing in request body")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Wallet address is required"})
 		return
 	}
 
 	runner.Status = models.RunnerStatusOnline
+	runner.DeviceID = deviceID
+
 	createdRunner, err := h.runnerService.CreateOrUpdateRunner(c.Request.Context(), &runner)
 	if err != nil {
+		log.Error().Err(err).Msg("Failed to create/update runner")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	log.Info().Fields(map[string]interface{}{
+		"device_id":      createdRunner.DeviceID,
+		"wallet_address": createdRunner.WalletAddress,
+		"status":         createdRunner.Status,
+		"webhook":        createdRunner.Webhook,
+	}).Msg("Runner created/updated successfully")
 
 	c.JSON(http.StatusCreated, createdRunner)
 }

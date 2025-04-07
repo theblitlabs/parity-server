@@ -18,13 +18,12 @@ import (
 type WebhookRegistration struct {
 	ID        string    `json:"id"`
 	URL       string    `json:"url"`
-	DeviceID  string    `json:"device_id"`
+	DeviceID  string    `json:"-"` // Internal field, not exposed in JSON
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type RegisterWebhookRequest struct {
 	URL           string `json:"url"`
-	DeviceID      string `json:"device_id"`
 	WalletAddress string `json:"wallet_address"`
 }
 
@@ -63,19 +62,19 @@ func (s *WebhookService) NotifyTaskUpdate() {
 	}
 }
 
-func (s *WebhookService) RegisterWebhook(req RegisterWebhookRequest) (string, error) {
+func (s *WebhookService) RegisterWebhook(req RegisterWebhookRequest, deviceID string) (string, error) {
 	if req.URL == "" {
 		return "", fmt.Errorf("webhook URL is required")
 	}
-	if req.DeviceID == "" {
-		return "", fmt.Errorf("device ID is required")
+	if deviceID == "" {
+		return "", fmt.Errorf("X-Device-ID header is required")
 	}
 
 	webhookID := uuid.New().String()
 	webhook := WebhookRegistration{
 		ID:        webhookID,
 		URL:       req.URL,
-		DeviceID:  req.DeviceID,
+		DeviceID:  deviceID,
 		CreatedAt: time.Now(),
 	}
 
@@ -86,7 +85,7 @@ func (s *WebhookService) RegisterWebhook(req RegisterWebhookRequest) (string, er
 	log := gologger.WithComponent("webhook")
 	log.Info().
 		Str("webhook_id", webhookID).
-		Str("device_id", req.DeviceID).
+		Str("device_id", deviceID).
 		Msg("Webhook registered")
 
 	go s.sendInitialNotification(webhook)
