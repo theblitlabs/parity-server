@@ -19,7 +19,7 @@ type Router struct {
 	endpoint string
 }
 
-func NewRouter(taskHandler *handlers.TaskHandler, endpoint string) *Router {
+func NewRouter(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, endpoint string) *Router {
 	engine := gin.New()
 
 	engine.Use(gin.Recovery())
@@ -30,13 +30,13 @@ func NewRouter(taskHandler *handlers.TaskHandler, endpoint string) *Router {
 		endpoint: endpoint,
 	}
 
-	r.registerRoutes(taskHandler)
+	r.registerRoutes(taskHandler, runnerHandler, webhookHandler)
 	return r
 }
 
-func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler) {
+func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler) {
 	api := r.engine.Group(r.endpoint)
-	v1.RegisterRoutes(api, taskHandler)
+	v1.RegisterRoutes(api, taskHandler, runnerHandler, webhookHandler)
 }
 
 func (r *Router) Engine() *gin.Engine {
