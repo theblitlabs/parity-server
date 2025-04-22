@@ -5,30 +5,42 @@ import (
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 )
 
-// RegisterRoutes registers all v1 routes
-func RegisterRoutes(api *gin.RouterGroup, taskHandler *handlers.TaskHandler) {
-	tasks := api.Group("/tasks")
+func registerTaskRoutes(router *gin.RouterGroup, handler *handlers.TaskHandler) {
+	tasks := router.Group("/tasks")
 	{
-		tasks.POST("", taskHandler.CreateTask)
-		tasks.GET("", taskHandler.ListTasks)
-		tasks.GET("/:id", taskHandler.GetTask)
-		tasks.POST("/:id/assign", taskHandler.AssignTask)
+		tasks.POST("", handler.CreateTask)        
+		tasks.GET("", handler.ListTasks)        
+		tasks.GET("/:id", handler.GetTask)
 		
-		tasks.GET("/:id/reward", taskHandler.GetTaskReward)
-		tasks.GET("/:id/result", taskHandler.GetTaskResult)
+		tasks.POST("/:id/assign", handler.AssignTask)
+		tasks.GET("/:id/reward", handler.GetTaskReward)  
+		tasks.GET("/:id/result", handler.GetTaskResult)  
 	}
+}
 
-	runners := api.Group("/runners")
+func registerRunnerRoutes(router *gin.RouterGroup, handler *handlers.TaskHandler) {
+	runners := router.Group("/runners")
 	{
-		runners.POST("", taskHandler.RegisterRunner)
-		runners.POST("/heartbeat", taskHandler.RunnerHeartbeat)
-
-		runners.GET("/tasks/available", taskHandler.ListAvailableTasks)
-		runners.POST("/tasks/:id/start", taskHandler.StartTask)
-		runners.POST("/tasks/:id/complete", taskHandler.CompleteTask)
-		runners.POST("/tasks/:id/result", taskHandler.SaveTaskResult)
-
-		runners.POST("/webhooks", taskHandler.RegisterWebhook)
-		runners.DELETE("/webhooks", taskHandler.UnregisterWebhook)
+		runners.POST("", handler.RegisterRunner)          
+		runners.POST("/heartbeat", handler.RunnerHeartbeat) 
+		
+		runnerTasks := runners.Group("/tasks")
+		{
+			runnerTasks.GET("/available", handler.ListAvailableTasks)  
+			runnerTasks.POST("/:id/start", handler.StartTask)         
+			runnerTasks.POST("/:id/complete", handler.CompleteTask)   
+			runnerTasks.POST("/:id/result", handler.SaveTaskResult)   
+		}
+		
+		runnerWebhooks := runners.Group("/webhooks")
+		{
+			runnerWebhooks.POST("", handler.RegisterWebhook)      
+			runnerWebhooks.DELETE("", handler.UnregisterWebhook)  
+		}
 	}
+}
+
+func RegisterRoutes(api *gin.RouterGroup, taskHandler *handlers.TaskHandler) {
+	registerTaskRoutes(api, taskHandler)
+	registerRunnerRoutes(api, taskHandler)
 } 
