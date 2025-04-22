@@ -25,8 +25,6 @@ type TaskHandler struct {
 	stakeWallet *walletsdk.StakeWallet
 	webhookService *services.WebhookService
 	webhooks       map[string]requestmodels.WebhookRegistration
-	stopCh         chan struct{}
-	runnerService  *services.RunnerService
 }
 
 func NewTaskHandler(service *services.TaskService, s3Service *services.S3Service) *TaskHandler {
