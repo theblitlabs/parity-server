@@ -36,6 +36,8 @@ type Server struct {
 	RunnerService    *services.RunnerService
 	HeartbeatService *services.HeartbeatService
 	TaskHandler      *handlers.TaskHandler
+	RunnerHandler    *handlers.RunnerHandler
+	WebhookHandler   *handlers.WebhookHandler
 	StopChannel      chan struct{}
 	monitorCancel    context.CancelFunc
 	monitorWg        *sync.WaitGroup
@@ -97,7 +99,7 @@ func (s *Server) Shutdown(ctx context.Context) {
 
 	log.Info().Msg("Starting webhook resource cleanup...")
 	cleanupStart := time.Now()
-	s.TaskHandler.CleanupResources()
+	s.WebhookHandler.CleanupResources()
 	log.Info().Dur("duration_ms", time.Since(cleanupStart)).Msg("Webhook resources cleanup completed")
 
 	dbCloseStart := time.Now()
@@ -123,6 +125,8 @@ type ServerBuilder struct {
 	s3Service        *services.S3Service
 	stakeWallet      *walletsdk.StakeWallet
 	taskHandler      *handlers.TaskHandler
+	runnerHandler    *handlers.RunnerHandler
+	webhookHandler   *handlers.WebhookHandler
 	httpServer       *http.Server
 	stopChannel      chan struct{}
 	monitorCtx       context.Context
@@ -298,12 +302,17 @@ func (sb *ServerBuilder) InitRouter() *ServerBuilder {
 		return sb
 	}
 
-	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.webhookService, sb.runnerService, sb.s3Service)
-	sb.taskHandler.SetStopChannel(sb.stopChannel)
+	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.s3Service)
 	sb.taskHandler.SetStakeWallet(sb.stakeWallet)
+
+	sb.runnerHandler = handlers.NewRunnerHandler(sb.taskService, sb.runnerService)
+	sb.webhookHandler = handlers.NewWebhookHandler(sb.webhookService, sb.runnerService)
+	sb.webhookHandler.SetStopChannel(sb.stopChannel)
 
 	router := api.NewRouter(
 		sb.taskHandler,
+		sb.runnerHandler,
+		sb.webhookHandler,
 		sb.config.Server.Endpoint,
 	)
 
@@ -333,6 +342,8 @@ func (sb *ServerBuilder) Build() (*Server, error) {
 		RunnerService:    sb.runnerService,
 		HeartbeatService: sb.heartbeatService,
 		TaskHandler:      sb.taskHandler,
+		RunnerHandler:    sb.runnerHandler,
+		WebhookHandler:   sb.webhookHandler,
 		StopChannel:      sb.stopChannel,
 		monitorCancel:    sb.monitorCancel,
 		monitorWg:        sb.monitorWg,

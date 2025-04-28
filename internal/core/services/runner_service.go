@@ -161,6 +161,10 @@ func (s *RunnerService) UpdateRunnerStatus(ctx context.Context, runner *models.R
 			Msg("Updating runner heartbeat")
 	}
 
+	if runner.Webhook != "" {
+		existingRunner.Webhook = runner.Webhook
+	}
+
 	updatedRunner, err := s.repo.Update(ctx, existingRunner)
 	if err != nil {
 		return nil, err

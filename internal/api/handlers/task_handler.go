@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,56 +14,24 @@ import (
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/core/models"
-	"github.com/theblitlabs/parity-server/internal/core/ports"
 	"github.com/theblitlabs/parity-server/internal/core/services"
 	"github.com/theblitlabs/parity-server/internal/utils"
+	requestmodels "github.com/theblitlabs/parity-server/internal/api/models"
 )
 
-type WebhookRegistration struct {
-	ID        string    `json:"id"`
-	URL       string    `json:"url"`
-	RunnerID  string    `json:"runner_id"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-type RegisterWebhookRequest struct {
-	URL string `json:"url"`
-}
-
-type WSMessage struct {
-	Type    string      `json:"type"`
-	Payload interface{} `json:"payload"`
-}
-
-type CreateTaskRequest struct {
-	Title       string                    `json:"title"`
-	Description string                    `json:"description"`
-	Type        models.TaskType           `json:"type"`
-	Image       string                    `json:"image"`
-	Command     []string                  `json:"command"`
-	Config      json.RawMessage           `json:"config"`
-	Environment *models.EnvironmentConfig `json:"environment,omitempty"`
-	Reward      float64                   `json:"reward"`
-	CreatorID   string                    `json:"creator_id"`
-}
-
 type TaskHandler struct {
-	service        ports.TaskService
+	service     *services.TaskService
+	s3Service   *services.S3Service
+	stakeWallet *walletsdk.StakeWallet
 	webhookService *services.WebhookService
-	s3Service      *services.S3Service
-	stakeWallet    *walletsdk.StakeWallet
-	webhooks       map[string]WebhookRegistration
-	stopCh         chan struct{}
-	runnerService  *services.RunnerService
+	webhooks       map[string]requestmodels.WebhookRegistration
 }
 
-func NewTaskHandler(service ports.TaskService, webhookService *services.WebhookService, runnerService *services.RunnerService, s3Service *services.S3Service) *TaskHandler {
+func NewTaskHandler(service *services.TaskService, s3Service *services.S3Service) *TaskHandler {
 	return &TaskHandler{
-		service:        service,
-		webhookService: webhookService,
-		s3Service:      s3Service,
-		webhooks:       make(map[string]WebhookRegistration),
-		runnerService:  runnerService,
+		service:   service,
+		s3Service: s3Service,
+		webhooks:  make(map[string]requestmodels.WebhookRegistration),
 	}
 }
 
@@ -73,73 +39,8 @@ func (h *TaskHandler) SetStakeWallet(wallet *walletsdk.StakeWallet) {
 	h.stakeWallet = wallet
 }
 
-func (h *TaskHandler) SetStopChannel(stopCh chan struct{}) {
-	h.stopCh = stopCh
-	h.webhookService.SetStopChannel(stopCh)
-}
-
 func (h *TaskHandler) NotifyTaskUpdate() {
 	h.webhookService.NotifyTaskUpdate()
-}
-
-func (h *TaskHandler) RegisterWebhook(c *gin.Context) {
-	log := gologger.WithComponent("task_handler")
-	var req services.RegisterWebhookRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Error().Err(err).Msg("Invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return
-	}
-
-	deviceID := c.GetHeader("X-Device-ID")
-	if deviceID == "" {
-		log.Error().Msg("X-Device-ID header is required")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "X-Device-ID header is required"})
-		return
-	}
-
-	_, err := h.runnerService.CreateOrUpdateRunner(c.Request.Context(), &models.Runner{
-		DeviceID:      deviceID,
-		Status:        models.RunnerStatusOnline,
-		Webhook:       req.URL,
-		WalletAddress: req.WalletAddress,
-	})
-	if err != nil {
-		log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to create/update runner")
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	webhookID, err := h.webhookService.RegisterWebhook(req, deviceID)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to register webhook")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"id": webhookID,
-	})
-}
-
-func (h *TaskHandler) UnregisterWebhook(c *gin.Context) {
-	deviceID := c.GetHeader("X-Device-ID")
-	if deviceID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "X-Device-ID header is required"})
-		return
-	}
-
-	_, err := h.runnerService.UpdateRunner(c.Request.Context(), &models.Runner{
-		DeviceID: deviceID,
-		Webhook:  "",
-		Status:   models.RunnerStatusOffline,
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.Status(http.StatusOK)
 }
 
 func (h *TaskHandler) GetTaskResult(c *gin.Context) {
@@ -170,7 +71,7 @@ func (h *TaskHandler) GetTaskResult(c *gin.Context) {
 func (h *TaskHandler) CreateTask(c *gin.Context) {
 	log := gologger.WithComponent("task_handler")
 	contentType := c.GetHeader("Content-Type")
-	var req CreateTaskRequest
+	var req requestmodels.CreateTaskRequest
 	var dockerImage []byte
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
@@ -353,38 +254,6 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	c.JSON(http.StatusCreated, task)
 }
 
-func (h *TaskHandler) StartTask(c *gin.Context) {
-	taskID := c.Param("id")
-	if taskID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "task ID is required"})
-		return
-	}
-
-	deviceID := c.GetHeader("X-Device-ID")
-	if deviceID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
-		return
-	}
-
-	if err := h.service.AssignTaskToRunner(c.Request.Context(), taskID, deviceID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := h.service.StartTask(c.Request.Context(), taskID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	task, err := h.service.GetTask(c.Request.Context(), taskID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, task)
-}
-
 func (h *TaskHandler) SaveTaskResult(c *gin.Context) {
 	taskID := c.Param("id")
 	if taskID == "" {
@@ -535,81 +404,6 @@ func (h *TaskHandler) GetTaskReward(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"reward": reward})
 }
 
-func (h *TaskHandler) ListAvailableTasks(c *gin.Context) {
-	tasks, err := h.service.ListAvailableTasks(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, tasks)
-}
-
-func (h *TaskHandler) NotifyRunnerOfTasks(runnerID string, tasks []*models.Task) error {
-	log := gologger.WithComponent("task_handler")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	runner, err := h.runnerService.GetRunner(ctx, runnerID)
-	if err != nil {
-		return fmt.Errorf("failed to get runner: %w", err)
-	}
-
-	if runner.Webhook == "" {
-		return fmt.Errorf("runner has no webhook URL")
-	}
-
-	if len(tasks) == 0 {
-		return nil
-	}
-
-	tasksJSON, err := json.Marshal(tasks)
-	if err != nil {
-		return fmt.Errorf("failed to marshal tasks: %w", err)
-	}
-
-	message := WSMessage{
-		Type:    "available_tasks",
-		Payload: tasksJSON,
-	}
-
-	messageJSON, err := json.Marshal(message)
-	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
-	}
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, "POST", runner.Webhook, bytes.NewBuffer(messageJSON))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Warn().Err(err).
-			Str("runner_id", runnerID).
-			Msg("Failed to notify runner, will be handled on next heartbeat")
-		return nil
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Warn().
-			Int("status", resp.StatusCode).
-			Str("body", string(body)).
-			Str("runner_id", runnerID).
-			Msg("Webhook notification failed, will be handled on next heartbeat")
-		return nil
-	}
-
-	log.Info().
-		Str("runner_id", runnerID).
-		Int("num_tasks", len(tasks)).
-		Msg("Successfully notified runner of tasks")
-	return nil
-}
-
 func (h *TaskHandler) CompleteTask(c *gin.Context) {
 	taskID := c.Param("id")
 	if taskID == "" {
@@ -629,87 +423,4 @@ func (h *TaskHandler) CompleteTask(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, task)
-}
-
-func (h *TaskHandler) CleanupResources() {
-	h.webhookService.CleanupResources()
-}
-
-func (h *TaskHandler) RegisterRunner(c *gin.Context) {
-	var runner models.Runner
-	log := gologger.WithComponent("task_handler")
-
-	rawBody, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to read request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
-		return
-	}
-	c.Request.Body = io.NopCloser(bytes.NewBuffer(rawBody))
-
-	log.Info().Str("raw_body", string(rawBody)).Msg("Incoming request body")
-
-	if err := c.ShouldBindJSON(&runner); err != nil {
-		log.Error().Err(err).Msg("Invalid request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return
-	}
-
-	log.Info().Fields(map[string]interface{}{
-		"wallet_address": runner.WalletAddress,
-		"webhook":        runner.Webhook,
-		"status":         runner.Status,
-	}).Msg("Parsed request body")
-
-	deviceID := c.GetHeader("X-Device-ID")
-	if deviceID == "" {
-		log.Error().Msg("X-Device-ID header is missing")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
-		return
-	}
-
-	if runner.WalletAddress == "" {
-		log.Error().Msg("Wallet address is missing in request body")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Wallet address is required"})
-		return
-	}
-
-	runner.Status = models.RunnerStatusOnline
-	runner.DeviceID = deviceID
-
-	createdRunner, err := h.runnerService.CreateOrUpdateRunner(c.Request.Context(), &runner)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create/update runner")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	log.Info().Fields(map[string]interface{}{
-		"device_id":      createdRunner.DeviceID,
-		"wallet_address": createdRunner.WalletAddress,
-		"status":         createdRunner.Status,
-		"webhook":        createdRunner.Webhook,
-	}).Msg("Runner created/updated successfully")
-
-	c.JSON(http.StatusCreated, createdRunner)
-}
-
-func (h *TaskHandler) RunnerHeartbeat(c *gin.Context) {
-	deviceID := c.GetHeader("X-Device-ID")
-	if deviceID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
-		return
-	}
-
-	runner := &models.Runner{
-		DeviceID: deviceID,
-		Status:   models.RunnerStatusOnline,
-	}
-
-	if _, err := h.runnerService.UpdateRunnerStatus(c.Request.Context(), runner); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.Status(http.StatusOK)
 }

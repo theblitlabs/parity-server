@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 	"github.com/theblitlabs/parity-server/internal/api/middleware"
+	v1 "github.com/theblitlabs/parity-server/internal/api/v1"
 )
 
 func init() {
@@ -18,7 +19,7 @@ type Router struct {
 	endpoint string
 }
 
-func NewRouter(taskHandler *handlers.TaskHandler, endpoint string) *Router {
+func NewRouter(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, endpoint string) *Router {
 	engine := gin.New()
 
 	engine.Use(gin.Recovery())
@@ -29,32 +30,13 @@ func NewRouter(taskHandler *handlers.TaskHandler, endpoint string) *Router {
 		endpoint: endpoint,
 	}
 
-	r.registerRoutes(taskHandler)
+	r.registerRoutes(taskHandler, runnerHandler, webhookHandler)
 	return r
 }
 
-func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler) {
+func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler) {
 	api := r.engine.Group(r.endpoint)
-	tasks := api.Group("/tasks")
-	runners := api.Group("/runners")
-
-	tasks.POST("", taskHandler.CreateTask)
-	tasks.GET("", taskHandler.ListTasks)
-	tasks.GET("/:id", taskHandler.GetTask)
-	tasks.POST("/:id/assign", taskHandler.AssignTask)
-	tasks.GET("/:id/reward", taskHandler.GetTaskReward)
-	tasks.GET("/:id/result", taskHandler.GetTaskResult)
-
-	runners.GET("/tasks/available", taskHandler.ListAvailableTasks)
-	runners.POST("/tasks/:id/start", taskHandler.StartTask)
-	runners.POST("/tasks/:id/complete", taskHandler.CompleteTask)
-	runners.POST("/tasks/:id/result", taskHandler.SaveTaskResult)
-
-	runners.POST("/webhooks", taskHandler.RegisterWebhook)
-	runners.DELETE("/webhooks", taskHandler.UnregisterWebhook)
-
-	runners.POST("", taskHandler.RegisterRunner)
-	runners.POST("/heartbeat", taskHandler.RunnerHeartbeat)
+	v1.RegisterRoutes(api, taskHandler, runnerHandler, webhookHandler)
 }
 
 func (r *Router) Engine() *gin.Engine {
