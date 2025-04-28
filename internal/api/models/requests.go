@@ -34,3 +34,13 @@ type CreateTaskRequest struct {
 	Reward      float64                       `json:"reward"`
 	CreatorID   string                        `json:"creator_id"`
 } 
+
+type HeartbeatPayload struct {
+	WalletAddress string              `json:"wallet_address"`
+	Status        coremodels.RunnerStatus `json:"status"`
+	Timestamp     int64               `json:"timestamp"`
+	Uptime        int64               `json:"uptime"`
+	Memory        int64               `json:"memory_usage"`
+	CPU           float64             `json:"cpu_usage"`
+	PublicIP      string              `json:"public_ip,omitempty"`
+}

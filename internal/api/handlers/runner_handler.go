@@ -89,6 +89,13 @@ func (h *RunnerHandler) RegisterRunner(c *gin.Context) {
 
 func (h *RunnerHandler) RunnerHeartbeat(c *gin.Context) {
 	deviceID := c.GetHeader("X-Device-ID")
+
+	var payload models.HeartbeatPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		return
+	}
+
 	if deviceID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
 		return
@@ -97,6 +104,7 @@ func (h *RunnerHandler) RunnerHeartbeat(c *gin.Context) {
 	runner := &coremodels.Runner{
 		DeviceID: deviceID,
 		Status:   coremodels.RunnerStatusOnline,
+		Webhook:  payload.PublicIP,
 	}
 
 	if _, err := h.runnerService.UpdateRunnerStatus(c.Request.Context(), runner); err != nil {
