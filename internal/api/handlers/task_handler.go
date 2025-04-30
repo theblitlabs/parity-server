@@ -13,16 +13,16 @@ import (
 	"github.com/google/uuid"
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
+	requestmodels "github.com/theblitlabs/parity-server/internal/api/models"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/core/services"
 	"github.com/theblitlabs/parity-server/internal/utils"
-	requestmodels "github.com/theblitlabs/parity-server/internal/api/models"
 )
 
 type TaskHandler struct {
-	service     *services.TaskService
-	s3Service   *services.S3Service
-	stakeWallet *walletsdk.StakeWallet
+	service        *services.TaskService
+	s3Service      *services.S3Service
+	stakeWallet    *walletsdk.StakeWallet
 	webhookService *services.WebhookService
 	webhooks       map[string]requestmodels.WebhookRegistration
 }
@@ -121,12 +121,16 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 			}
 
 			if req.Environment == nil {
+				config := map[string]interface{}{
+					"image": req.Image,
+				}
+				if len(req.Command) > 0 {
+					config["command"] = req.Command
+				}
+
 				req.Environment = &models.EnvironmentConfig{
-					Type: "docker",
-					Config: map[string]interface{}{
-						"image":   req.Image,
-						"command": req.Command,
-					},
+					Type:   "docker",
+					Config: config,
 				}
 			}
 
@@ -153,12 +157,16 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		if req.Image != "" {
 			req.Type = models.TaskTypeDocker
 			if req.Environment == nil {
+				config := map[string]interface{}{
+					"image": req.Image,
+				}
+				if len(req.Command) > 0 {
+					config["command"] = req.Command
+				}
+
 				req.Environment = &models.EnvironmentConfig{
-					Type: "docker",
-					Config: map[string]interface{}{
-						"image":   req.Image,
-						"command": req.Command,
-					},
+					Type:   "docker",
+					Config: config,
 				}
 			}
 
