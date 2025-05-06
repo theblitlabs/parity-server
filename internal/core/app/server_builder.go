@@ -304,6 +304,7 @@ func (sb *ServerBuilder) InitRouter() *ServerBuilder {
 
 	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.s3Service)
 	sb.taskHandler.SetStakeWallet(sb.stakeWallet)
+	sb.taskHandler.SetWebhookService(sb.webhookService)
 
 	sb.runnerHandler = handlers.NewRunnerHandler(sb.taskService, sb.runnerService)
 	sb.webhookHandler = handlers.NewWebhookHandler(sb.webhookService, sb.runnerService)
