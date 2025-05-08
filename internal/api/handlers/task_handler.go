@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -195,11 +196,9 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		return
 	}
 
+	// Creator address is now optional since we only check device ID for stake
 	creatorAddress := c.GetHeader("X-Creator-Address")
-	if creatorAddress == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Creator address is required"})
-		return
-	}
+	// We still store the creator address for reference, but don't require it
 
 	if req.Type != models.TaskTypeDocker && req.Type != models.TaskTypeCommand {
 		log.Error().Str("type", string(req.Type)).Msg("Invalid task type")
@@ -244,7 +243,6 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	if err := h.checkStakeBalance(task); err != nil {
 		log.Error().Err(err).
 			Str("device_id", deviceID).
-			Str("creator_address", task.CreatorAddress).
 			Msg("Stake validation failed")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -317,58 +315,43 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 	log := gologger.WithComponent("task_handler")
 
 	if h.stakeWallet == nil {
-		log.Error().Str("creator_address", task.CreatorAddress).Msg("Stake wallet not initialized")
+		log.Error().Str("device_id", task.CreatorDeviceID).Msg("Stake wallet not initialized")
 		return fmt.Errorf("stake wallet not initialized")
 	}
 
-	info, err := h.stakeWallet.GetStakeInfo(task.CreatorAddress)
+	// Check if we're in development mode and bypass stake check
+	if os.Getenv("PARITY_ENV") == "development" && os.Getenv("BYPASS_STAKE_CHECK") == "true" {
+		log.Info().Str("device_id", task.CreatorDeviceID).Msg("Bypassing stake check in development mode")
+		return nil
+	}
+
+	// Only check stake for device ID, not wallet address
+	info, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
 	if err != nil {
-		log.Error().Err(err).Str("creator_address", task.CreatorAddress).Msg("Failed to get stake info")
+		log.Error().Err(err).Str("device_id", task.CreatorDeviceID).Msg("Failed to get stake info")
 		return fmt.Errorf("failed to get stake info: %v", err)
 	}
 
 	log.Info().
-		Str("creator_address", task.CreatorAddress).
+		Str("device_id", task.CreatorDeviceID).
 		Bool("exists", info.Exists).
 		Str("amount", info.Amount.String()).
 		Msg("Retrieved stake info")
 
 	if !info.Exists {
-		log.Info().Str("creator_address", task.CreatorAddress).Msg("Wallet not registered, trying with device ID")
-
-		deviceInfo, deviceErr := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
-		if deviceErr != nil {
-			log.Error().Err(deviceErr).Str("device_id", task.CreatorDeviceID).Msg("Failed to get stake info for device ID")
-		} else {
-			log.Info().
-				Str("device_id", task.CreatorDeviceID).
-				Bool("exists", deviceInfo.Exists).
-				Str("amount", deviceInfo.Amount.String()).
-				Msg("Retrieved stake info for device ID")
-
-			if deviceInfo.Exists && deviceInfo.Amount.Cmp(big.NewInt(0)) > 0 {
-				info = deviceInfo
-			}
-		}
-	}
-
-	if !info.Exists {
-		log.Error().
-			Str("creator_address", task.CreatorAddress).
-			Str("device_id", task.CreatorDeviceID).
-			Msg("Neither wallet address nor device ID are registered in staking contract")
-		return fmt.Errorf("wallet %s is not registered in the staking contract - please stake PRTY tokens first", task.CreatorAddress)
+		log.Error().Str("device_id", task.CreatorDeviceID).Msg("Device is not registered in staking contract")
+		return fmt.Errorf("device %s is not registered in the staking contract - please stake PRTY tokens first", task.CreatorDeviceID)
 	}
 
 	minRequiredStake := big.NewInt(10)
 	if info.Amount.Cmp(minRequiredStake) <= 0 {
 		log.Error().
-			Str("creator_address", task.CreatorAddress).
+			Str("device_id", task.CreatorDeviceID).
 			Str("current_balance", info.Amount.String()).
 			Str("required_balance", minRequiredStake.String()).
 			Msg("Insufficient stake balance")
-		return fmt.Errorf("insufficient stake balance for wallet %s - current balance: %v PRTY, minimum required: %v PRTY",
-			task.CreatorAddress,
+		return fmt.Errorf("insufficient stake balance for device %s - current balance: %v PRTY, minimum required: %v PRTY",
+			task.CreatorDeviceID,
 			info.Amount.String(),
 			minRequiredStake.String())
 	}
