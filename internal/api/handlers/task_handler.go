@@ -6,7 +6,6 @@ import (
 	"io"
 	"math/big"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -317,13 +316,6 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 		return fmt.Errorf("stake wallet not initialized")
 	}
 
-	// Check if we're in development mode and bypass stake check
-	if os.Getenv("PARITY_ENV") == "development" && os.Getenv("BYPASS_STAKE_CHECK") == "true" {
-		log.Info().Str("device_id", task.CreatorDeviceID).Msg("Bypassing stake check in development mode")
-		return nil
-	}
-
-	// Only check stake for device ID, not wallet address
 	info, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
 	if err != nil {
 		log.Error().Err(err).Str("device_id", task.CreatorDeviceID).Msg("Failed to get stake info")
