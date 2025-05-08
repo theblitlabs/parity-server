@@ -196,9 +196,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		return
 	}
 
-	// Creator address is now optional since we only check device ID for stake
-	creatorAddress := c.GetHeader("X-Creator-Address")
-	// We still store the creator address for reference, but don't require it
+	creatorAddress := c.GetHeader("X-Creator-Address") // We store the creator address for reference, but don't require it now
 
 	if req.Type != models.TaskTypeDocker && req.Type != models.TaskTypeCommand {
 		log.Error().Str("type", string(req.Type)).Msg("Invalid task type")
