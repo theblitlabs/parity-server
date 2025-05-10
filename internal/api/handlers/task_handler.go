@@ -128,12 +128,16 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 			}
 
 			if req.Environment == nil {
+				config := map[string]interface{}{
+					"image": req.Image,
+				}
+				if len(req.Command) > 0 {
+					config["command"] = req.Command
+				}
+
 				req.Environment = &models.EnvironmentConfig{
-					Type: "docker",
-					Config: map[string]interface{}{
-						"image":   req.Image,
-						"command": req.Command,
-					},
+					Type:   "docker",
+					Config: config,
 				}
 			}
 
@@ -160,12 +164,16 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		if req.Image != "" {
 			req.Type = models.TaskTypeDocker
 			if req.Environment == nil {
+				config := map[string]interface{}{
+					"image": req.Image,
+				}
+				if len(req.Command) > 0 {
+					config["command"] = req.Command
+				}
+
 				req.Environment = &models.EnvironmentConfig{
-					Type: "docker",
-					Config: map[string]interface{}{
-						"image":   req.Image,
-						"command": req.Command,
-					},
+					Type:   "docker",
+					Config: config,
 				}
 			}
 
