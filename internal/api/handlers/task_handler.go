@@ -13,16 +13,16 @@ import (
 	"github.com/google/uuid"
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
+	requestmodels "github.com/theblitlabs/parity-server/internal/api/models"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/core/services"
 	"github.com/theblitlabs/parity-server/internal/utils"
-	requestmodels "github.com/theblitlabs/parity-server/internal/api/models"
 )
 
 type TaskHandler struct {
-	service     *services.TaskService
-	s3Service   *services.S3Service
-	stakeWallet *walletsdk.StakeWallet
+	service        *services.TaskService
+	s3Service      *services.S3Service
+	stakeWallet    *walletsdk.StakeWallet
 	webhookService *services.WebhookService
 	webhooks       map[string]requestmodels.WebhookRegistration
 }
@@ -39,7 +39,14 @@ func (h *TaskHandler) SetStakeWallet(wallet *walletsdk.StakeWallet) {
 	h.stakeWallet = wallet
 }
 
+func (h *TaskHandler) SetWebhookService(service *services.WebhookService) {
+	h.webhookService = service
+}
+
 func (h *TaskHandler) NotifyTaskUpdate() {
+	if h.webhookService == nil {
+		return
+	}
 	h.webhookService.NotifyTaskUpdate()
 }
 
@@ -188,11 +195,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		return
 	}
 
-	creatorAddress := c.GetHeader("X-Creator-Address")
-	if creatorAddress == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Creator address is required"})
-		return
-	}
+	creatorAddress := c.GetHeader("X-Creator-Address") // We store the creator address for reference, but don't require it now
 
 	if req.Type != models.TaskTypeDocker && req.Type != models.TaskTypeCommand {
 		log.Error().Str("type", string(req.Type)).Msg("Invalid task type")
@@ -237,7 +240,6 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	if err := h.checkStakeBalance(task); err != nil {
 		log.Error().Err(err).
 			Str("device_id", deviceID).
-			Str("creator_address", task.CreatorAddress).
 			Msg("Stake validation failed")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -307,23 +309,39 @@ func (h *TaskHandler) SaveTaskResult(c *gin.Context) {
 }
 
 func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
+	log := gologger.WithComponent("task_handler")
+
 	if h.stakeWallet == nil {
+		log.Error().Str("device_id", task.CreatorDeviceID).Msg("Stake wallet not initialized")
 		return fmt.Errorf("stake wallet not initialized")
 	}
 
-	info, err := h.stakeWallet.GetStakeInfo(task.CreatorAddress)
+	info, err := h.stakeWallet.GetStakeInfo(task.CreatorDeviceID)
 	if err != nil {
+		log.Error().Err(err).Str("device_id", task.CreatorDeviceID).Msg("Failed to get stake info")
 		return fmt.Errorf("failed to get stake info: %v", err)
 	}
 
+	log.Info().
+		Str("device_id", task.CreatorDeviceID).
+		Bool("exists", info.Exists).
+		Str("amount", info.Amount.String()).
+		Msg("Retrieved stake info")
+
 	if !info.Exists {
-		return fmt.Errorf("wallet %s is not registered in the staking contract - please stake PRTY tokens first", task.CreatorAddress)
+		log.Error().Str("device_id", task.CreatorDeviceID).Msg("Device is not registered in staking contract")
+		return fmt.Errorf("device %s is not registered in the staking contract - please stake PRTY tokens first", task.CreatorDeviceID)
 	}
 
 	minRequiredStake := big.NewInt(10)
 	if info.Amount.Cmp(minRequiredStake) <= 0 {
-		return fmt.Errorf("insufficient stake balance for wallet %s - current balance: %v PRTY, minimum required: %v PRTY",
-			task.CreatorAddress,
+		log.Error().
+			Str("device_id", task.CreatorDeviceID).
+			Str("current_balance", info.Amount.String()).
+			Str("required_balance", minRequiredStake.String()).
+			Msg("Insufficient stake balance")
+		return fmt.Errorf("insufficient stake balance for device %s - current balance: %v PRTY, minimum required: %v PRTY",
+			task.CreatorDeviceID,
 			info.Amount.String(),
 			minRequiredStake.String())
 	}
