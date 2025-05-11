@@ -131,9 +131,6 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 				config := map[string]interface{}{
 					"image": req.Image,
 				}
-				if len(req.Command) > 0 {
-					config["command"] = req.Command
-				}
 
 				req.Environment = &models.EnvironmentConfig{
 					Type:   "docker",
@@ -142,7 +139,6 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 			}
 
 			taskConfig := models.TaskConfig{
-				Command:        req.Command,
 				DockerImageURL: imageURL,
 				ImageName:      strings.TrimSuffix(file.Filename, ".tar"),
 			}
@@ -167,9 +163,6 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 				config := map[string]interface{}{
 					"image": req.Image,
 				}
-				if len(req.Command) > 0 {
-					config["command"] = req.Command
-				}
 
 				req.Environment = &models.EnvironmentConfig{
 					Type:   "docker",
@@ -178,7 +171,6 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 			}
 
 			taskConfig := models.TaskConfig{
-				Command:   req.Command,
 				ImageName: req.Image,
 			}
 
@@ -227,10 +219,6 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		if taskConfig.ImageName == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Image name is required for Docker tasks"})
 			return
-		}
-
-		if len(taskConfig.Command) == 0 {
-			taskConfig.Command = []string{}
 		}
 	}
 

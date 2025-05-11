@@ -35,7 +35,6 @@ type DockerConfig struct {
 
 type TaskConfig struct {
 	FileURL        string            `json:"file_url,omitempty"`
-	Command        []string          `json:"command,omitempty"`
 	Env            map[string]string `json:"env,omitempty"`
 	Resources      ResourceConfig    `json:"resources,omitempty"`
 	DockerImageURL string            `json:"docker_image_url,omitempty"`
