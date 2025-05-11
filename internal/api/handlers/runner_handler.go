@@ -241,4 +241,4 @@ func (h *RunnerHandler) NotifyRunnerOfTasks(runnerID string, tasks []*coremodels
 		Int("num_tasks", len(tasks)).
 		Msg("Successfully notified runner of tasks")
 	return nil
-} 
+}
