@@ -95,4 +95,4 @@ func (h *WebhookHandler) UnregisterWebhook(c *gin.Context) {
 
 func (h *WebhookHandler) CleanupResources() {
 	h.webhookService.CleanupResources()
-} 
+}
