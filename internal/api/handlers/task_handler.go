@@ -20,18 +20,20 @@ import (
 )
 
 type TaskHandler struct {
-	service        *services.TaskService
-	s3Service      *services.S3Service
-	stakeWallet    *walletsdk.StakeWallet
-	webhookService *services.WebhookService
-	webhooks       map[string]requestmodels.WebhookRegistration
+	service             *services.TaskService
+	s3Service           *services.S3Service
+	stakeWallet         *walletsdk.StakeWallet
+	webhookService      *services.WebhookService
+	verificationService *services.VerificationService
+	webhooks            map[string]requestmodels.WebhookRegistration
 }
 
-func NewTaskHandler(service *services.TaskService, s3Service *services.S3Service) *TaskHandler {
+func NewTaskHandler(service *services.TaskService, s3Service *services.S3Service, verificationService *services.VerificationService) *TaskHandler {
 	return &TaskHandler{
-		service:   service,
-		s3Service: s3Service,
-		webhooks:  make(map[string]requestmodels.WebhookRegistration),
+		service:             service,
+		s3Service:           s3Service,
+		verificationService: verificationService,
+		webhooks:            make(map[string]requestmodels.WebhookRegistration),
 	}
 }
 
@@ -430,11 +432,67 @@ func (h *TaskHandler) CompleteTask(c *gin.Context) {
 		return
 	}
 
-	task, err := h.service.GetTask(c.Request.Context(), taskID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	c.JSON(http.StatusOK, gin.H{"message": "task completed successfully"})
+}
+
+type VerificationRequest struct {
+	TaskID              string `json:"task_id"`
+	RunnerID            string `json:"runner_id"`
+	ImageHashVerified   string `json:"image_hash_verified"`
+	CommandHashVerified string `json:"command_hash_verified"`
+	Timestamp           int64  `json:"timestamp"`
+}
+
+func (h *TaskHandler) VerifyTaskHashes(c *gin.Context) {
+	log := gologger.WithComponent("task_handler")
+	taskID := c.Param("id")
+
+	if taskID == "" {
+		log.Error().Msg("Task ID is required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task ID is required"})
 		return
 	}
 
-	c.JSON(http.StatusOK, task)
+	var req VerificationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Error().Err(err).Msg("Invalid verification request")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	runnerID := c.GetHeader("X-Runner-ID")
+	if runnerID == "" {
+		log.Error().Msg("Runner ID is required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Runner ID is required"})
+		return
+	}
+
+	if req.TaskID != taskID {
+		log.Error().
+			Str("url_task_id", taskID).
+			Str("body_task_id", req.TaskID).
+			Msg("Task ID mismatch")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Task ID mismatch"})
+		return
+	}
+
+	err := h.verificationService.VerifyTaskExecution(c.Request.Context(), taskID, req.ImageHashVerified, req.CommandHashVerified)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("task_id", taskID).
+			Str("runner_id", runnerID).
+			Msg("Hash verification failed")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Hash verification failed", "details": err.Error()})
+		return
+	}
+
+	log.Info().
+		Str("task_id", taskID).
+		Str("runner_id", runnerID).
+		Str("image_hash", req.ImageHashVerified).
+		Str("command_hash", req.CommandHashVerified).
+		Msg("Hash verification successful")
+
+	c.JSON(http.StatusOK, gin.H{"message": "Hash verification successful"})
 }

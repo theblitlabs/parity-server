@@ -113,26 +113,27 @@ func (s *Server) Shutdown(ctx context.Context) {
 }
 
 type ServerBuilder struct {
-	config           *config.Config
-	dbManager        *db.DBManager
-	repoFactory      *db.RepositoryFactory
-	taskRepo         *repositories.TaskRepository
-	runnerRepo       *repositories.RunnerRepository
-	taskService      *services.TaskService
-	runnerService    *services.RunnerService
-	heartbeatService *services.HeartbeatService
-	webhookService   *services.WebhookService
-	s3Service        *services.S3Service
-	stakeWallet      *walletsdk.StakeWallet
-	taskHandler      *handlers.TaskHandler
-	runnerHandler    *handlers.RunnerHandler
-	webhookHandler   *handlers.WebhookHandler
-	httpServer       *http.Server
-	stopChannel      chan struct{}
-	monitorCtx       context.Context
-	monitorCancel    context.CancelFunc
-	monitorWg        *sync.WaitGroup
-	err              error
+	config              *config.Config
+	dbManager           *db.DBManager
+	repoFactory         *db.RepositoryFactory
+	taskRepo            *repositories.TaskRepository
+	runnerRepo          *repositories.RunnerRepository
+	taskService         *services.TaskService
+	runnerService       *services.RunnerService
+	heartbeatService    *services.HeartbeatService
+	webhookService      *services.WebhookService
+	s3Service           *services.S3Service
+	verificationService *services.VerificationService
+	stakeWallet         *walletsdk.StakeWallet
+	taskHandler         *handlers.TaskHandler
+	runnerHandler       *handlers.RunnerHandler
+	webhookHandler      *handlers.WebhookHandler
+	httpServer          *http.Server
+	stopChannel         chan struct{}
+	monitorCtx          context.Context
+	monitorCancel       context.CancelFunc
+	monitorWg           *sync.WaitGroup
+	err                 error
 }
 
 func NewServerBuilder(cfg *config.Config) *ServerBuilder {
@@ -200,6 +201,8 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 		return sb
 	}
 	sb.s3Service = s3Service
+
+	sb.verificationService = services.NewVerificationService(sb.taskRepo)
 
 	return sb
 }
@@ -302,7 +305,7 @@ func (sb *ServerBuilder) InitRouter() *ServerBuilder {
 		return sb
 	}
 
-	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.s3Service)
+	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.s3Service, sb.verificationService)
 	sb.taskHandler.SetStakeWallet(sb.stakeWallet)
 	sb.taskHandler.SetWebhookService(sb.webhookService)
 
