@@ -76,6 +76,8 @@ type Task struct {
 	CreatorDeviceID string             `json:"creator_device_id" gorm:"type:varchar(255)"`
 	RunnerID        string             `json:"runner_id" gorm:"type:varchar(255)"`
 	Nonce           string             `json:"nonce" gorm:"type:varchar(64);not null"`
+	ImageHash       string             `json:"image_hash" gorm:"type:varchar(64)"`
+	CommandHash     string             `json:"command_hash" gorm:"type:varchar(64)"`
 	CreatedAt       time.Time          `json:"created_at" gorm:"type:timestamp"`
 	UpdatedAt       time.Time          `json:"updated_at" gorm:"type:timestamp"`
 	CompletedAt     *time.Time         `json:"completed_at" gorm:"type:timestamp"`

@@ -13,6 +13,7 @@ func registerTaskRoutes(router *gin.RouterGroup, taskHandler *handlers.TaskHandl
 		tasks.GET("/:id", taskHandler.GetTask)
 		tasks.GET("/:id/reward", taskHandler.GetTaskReward)
 		tasks.GET("/:id/result", taskHandler.GetTaskResult)
+		tasks.POST("/:id/verify-hashes", taskHandler.VerifyTaskHashes)
 	}
 }
 
