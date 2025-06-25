@@ -122,7 +122,7 @@ type ServerBuilder struct {
 	runnerService       *services.RunnerService
 	heartbeatService    *services.HeartbeatService
 	webhookService      *services.WebhookService
-	s3Service           *services.S3Service
+	storageService      services.StorageService
 	verificationService *services.VerificationService
 	stakeWallet         *walletsdk.StakeWallet
 	taskHandler         *handlers.TaskHandler
@@ -195,12 +195,12 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 
 	sb.webhookService = services.NewWebhookService(sb.taskService)
 
-	s3Service, err := services.NewS3Service(sb.config)
+	storageService, err := services.NewStorageService(sb.config)
 	if err != nil {
-		sb.err = fmt.Errorf("failed to initialize S3 service: %w", err)
+		sb.err = fmt.Errorf("failed to initialize storage service: %w", err)
 		return sb
 	}
-	sb.s3Service = s3Service
+	sb.storageService = storageService
 
 	sb.verificationService = services.NewVerificationService(sb.taskRepo)
 
@@ -305,7 +305,7 @@ func (sb *ServerBuilder) InitRouter() *ServerBuilder {
 		return sb
 	}
 
-	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.s3Service, sb.verificationService)
+	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.storageService, sb.verificationService)
 	sb.taskHandler.SetStakeWallet(sb.stakeWallet)
 	sb.taskHandler.SetWebhookService(sb.webhookService)
 

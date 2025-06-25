@@ -124,10 +124,10 @@ Create a `.env` file with the following configuration:
 
 ```env
 # Ethereum Configuration
-ETHEREUM_CHAIN_ID=11155111                                                         # Sepolia testnet
-ETHEREUM_RPC=https://eth-sepolia.g.alchemy.com/v2/API_KEY
-ETHEREUM_STAKE_WALLET_ADDRESS=0x261259e9467E042DBBF372906e17b94fC06942f2        # Stake wallet address
-ETHEREUM_TOKEN_ADDRESS=0x844303bcC1a347bE6B409Ae159b4040d84876024              # Token contract address
+ETHEREUM_CHAIN_ID=314159                                                         # Filecoin Calibration testnet
+ETHEREUM_RPC=https://api.calibration.node.glif.io/rpc/v1
+ETHEREUM_STAKE_WALLET_ADDRESS=0x7465e7a637f66cb7b294b856a25bc84abff1d247        # Stake wallet address
+ETHEREUM_TOKEN_ADDRESS=0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0              # Token contract address
 
 # Database Configuration
 DATABASE_USERNAME=postgres
@@ -136,9 +136,10 @@ DATABASE_HOST=localhost
 DATABASE_PORT=5432
 DATABASE_DATABASE_NAME=parity
 
-# AWS Configuration
-AWS_REGION=ap-south-1
-AWS_BUCKET_NAME=dev-parity-docker-images
+# Filecoin Storage Configuration
+FILECOIN_IPFS_ENDPOINT=http://localhost:5001
+FILECOIN_GATEWAY_URL=https://gateway.pinata.cloud
+FILECOIN_CREATE_STORAGE_DEALS=false
 
 # Server Configuration
 SERVER_PORT=8080
@@ -156,9 +157,9 @@ SCHEDULER_INTERVAL=10
 
 > **Important**: The above configuration shows the current Sepolia testnet setup. Key contract details:
 >
-> - Network: Sepolia Testnet (Chain ID: 11155111)
-> - Token Contract: [`0x844303bcC1a347bE6B409Ae159b4040d84876024`](https://sepolia.etherscan.io/address/0x844303bcC1a347bE6B409Ae159b4040d84876024)
-> - Stake Wallet: [`0x261259e9467E042DBBF372906e17b94fC06942f2`](https://sepolia.etherscan.io/address/0x261259e9467E042DBBF372906e17b94fC06942f2)
+> - Network: Filecoin Calibration Testnet (Chain ID: 314159)
+> - Token Contract: [`0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0`](https://filfox.info/en/address/0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0)
+> - Stake Wallet: [`0x7465e7a637f66cb7b294b856a25bc84abff1d247`](https://filfox.info/en/address/0x7465e7a637f66cb7b294b856a25bc84abff1d247)
 >
 > For production deployment, you should replace these values with your own:
 >
@@ -167,7 +168,7 @@ SCHEDULER_INTERVAL=10
 > - Network chain ID
 > - Token contract address
 > - Stake wallet address
-> - AWS credentials and region
+> - Filecoin/IPFS endpoints and gateway
 > - Scheduler interval
 
 ### CLI Usage

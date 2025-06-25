@@ -21,17 +21,17 @@ import (
 
 type TaskHandler struct {
 	service             *services.TaskService
-	s3Service           *services.S3Service
+	storageService      services.StorageService
 	stakeWallet         *walletsdk.StakeWallet
 	webhookService      *services.WebhookService
 	verificationService *services.VerificationService
 	webhooks            map[string]requestmodels.WebhookRegistration
 }
 
-func NewTaskHandler(service *services.TaskService, s3Service *services.S3Service, verificationService *services.VerificationService) *TaskHandler {
+func NewTaskHandler(service *services.TaskService, storageService services.StorageService, verificationService *services.VerificationService) *TaskHandler {
 	return &TaskHandler{
 		service:             service,
-		s3Service:           s3Service,
+		storageService:      storageService,
 		verificationService: verificationService,
 		webhooks:            make(map[string]requestmodels.WebhookRegistration),
 	}
@@ -122,7 +122,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 				return
 			}
 
-			imageURL, err := h.s3Service.UploadDockerImage(c.Request.Context(), dockerImage, strings.TrimSuffix(file.Filename, ".tar"))
+			imageURL, err := h.storageService.UploadDockerImage(c.Request.Context(), dockerImage, strings.TrimSuffix(file.Filename, ".tar"))
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to upload Docker image")
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upload Docker image"})

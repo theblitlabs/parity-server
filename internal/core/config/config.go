@@ -12,7 +12,7 @@ type Config struct {
 	Server    ServerConfig    `mapstructure:"SERVER"`
 	Database  DatabaseConfig  `mapstructure:"DATABASE"`
 	Ethereum  EthereumConfig  `mapstructure:"ETHEREUM"`
-	AWS       AWSConfig       `mapstructure:"AWS"`
+	Filecoin  FilecoinConfig  `mapstructure:"FILECOIN"`
 	Scheduler SchedulerConfig `mapstructure:"SCHEDULER"`
 }
 
@@ -30,11 +30,10 @@ type DatabaseConfig struct {
 	DatabaseName string `mapstructure:"DATABASE_NAME"`
 }
 
-type AWSConfig struct {
-	Region          string `mapstructure:"REGION"`
-	BucketName      string `mapstructure:"BUCKET_NAME"`
-	AccessKeyID     string `mapstructure:"ACCESS_KEY_ID"`
-	SecretAccessKey string `mapstructure:"SECRET_ACCESS_KEY"`
+type FilecoinConfig struct {
+	IPFSEndpoint       string `mapstructure:"IPFS_ENDPOINT"`
+	GatewayURL         string `mapstructure:"GATEWAY_URL"`
+	CreateStorageDeals bool   `mapstructure:"CREATE_STORAGE_DEALS"`
 }
 
 type EthereumConfig struct {
@@ -141,11 +140,10 @@ func loadConfigFile(path string) (*Config, error) {
 		"DATABASE_NAME": v.GetString("DATABASE_DATABASE_NAME"),
 	})
 
-	v.SetDefault("AWS", map[string]interface{}{
-		"REGION":            v.GetString("AWS_REGION"),
-		"BUCKET_NAME":       v.GetString("AWS_BUCKET_NAME"),
-		"ACCESS_KEY_ID":     v.GetString("AWS_ACCESS_KEY_ID"),
-		"SECRET_ACCESS_KEY": v.GetString("AWS_SECRET_ACCESS_KEY"),
+	v.SetDefault("FILECOIN", map[string]interface{}{
+		"IPFS_ENDPOINT":        v.GetString("FILECOIN_IPFS_ENDPOINT"),
+		"GATEWAY_URL":          v.GetString("FILECOIN_GATEWAY_URL"),
+		"CREATE_STORAGE_DEALS": v.GetBool("FILECOIN_CREATE_STORAGE_DEALS"),
 	})
 
 	v.SetDefault("ETHEREUM", map[string]interface{}{
