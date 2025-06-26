@@ -389,13 +389,58 @@ func (s *FederatedLearningService) sendTrainingTask(ctx context.Context, session
 		return fmt.Errorf("dataset CID is required but missing from session")
 	}
 
+	// Get all participants to determine partition configuration
+	participants, err := s.flSessionRepo.GetParticipants(ctx, session.ID)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get participants, using default partitioning")
+		participants = []string{runnerID} // Fallback to single participant
+	}
+
+	// Find the index of current runner in participants list
+	runnerIndex := 0
+	for i, participantID := range participants {
+		if participantID == runnerID {
+			runnerIndex = i
+			break
+		}
+	}
+
+	// Create partition configuration based on session settings
+	partitionConfig := map[string]interface{}{
+		"strategy":      session.TrainingData.SplitStrategy,
+		"total_parts":   len(participants),
+		"part_index":    runnerIndex,
+		"alpha":         0.5, // Default Dirichlet parameter for non-IID
+		"min_samples":   50,  // Minimum samples per participant
+		"overlap_ratio": 0.0, // No overlap by default
+	}
+
+	// Override with session-specific partition settings if available
+	if session.TrainingData.Metadata != nil {
+		if alpha, ok := session.TrainingData.Metadata["alpha"].(float64); ok {
+			partitionConfig["alpha"] = alpha
+		}
+		if minSamples, ok := session.TrainingData.Metadata["min_samples"].(float64); ok {
+			partitionConfig["min_samples"] = int(minSamples)
+		}
+		if overlapRatio, ok := session.TrainingData.Metadata["overlap_ratio"].(float64); ok {
+			partitionConfig["overlap_ratio"] = overlapRatio
+		}
+	}
+
+	// Set default split strategy if not specified
+	if partitionConfig["strategy"] == "" || partitionConfig["strategy"] == nil {
+		partitionConfig["strategy"] = "random"
+	}
+
 	config := map[string]interface{}{
-		"session_id":   session.ID.String(),
-		"round_id":     roundID.String(),
-		"model_type":   session.ModelType,
-		"dataset_cid":  session.TrainingData.DatasetCID,
-		"data_format":  dataFormat,
-		"model_config": session.Config.ModelConfig,
+		"session_id":       session.ID.String(),
+		"round_id":         roundID.String(),
+		"model_type":       session.ModelType,
+		"dataset_cid":      session.TrainingData.DatasetCID,
+		"data_format":      dataFormat,
+		"model_config":     session.Config.ModelConfig,
+		"partition_config": partitionConfig,
 		"train_config": map[string]interface{}{
 			"epochs":        session.Config.LocalEpochs,
 			"batch_size":    session.Config.BatchSize,
@@ -409,7 +454,10 @@ func (s *FederatedLearningService) sendTrainingTask(ctx context.Context, session
 		Str("dataset_cid", session.TrainingData.DatasetCID).
 		Str("data_format", dataFormat).
 		Str("model_type", session.ModelType).
-		Msg("Creating FL training task with configuration")
+		Str("split_strategy", fmt.Sprintf("%v", partitionConfig["strategy"])).
+		Int("total_participants", len(participants)).
+		Int("runner_index", runnerIndex).
+		Msg("Creating FL training task with partitioned data configuration")
 
 	configData, err := json.Marshal(config)
 	if err != nil {
@@ -419,15 +467,15 @@ func (s *FederatedLearningService) sendTrainingTask(ctx context.Context, session
 
 	task := &models.Task{
 		ID:              uuid.New(),
-		Title:           fmt.Sprintf("FL Training - Session %s Round %d", session.Name, session.CurrentRound),
-		Description:     fmt.Sprintf("Federated learning training task for session %s", session.Name),
+		Title:           fmt.Sprintf("FL Training - Session %s Round %d (Partition %d/%d)", session.Name, session.CurrentRound, runnerIndex+1, len(participants)),
+		Description:     fmt.Sprintf("Federated learning training task for session %s with %s data partitioning", session.Name, partitionConfig["strategy"]),
 		Type:            models.TaskTypeFederatedLearning,
 		Status:          models.TaskStatusPending,
 		Config:          configData,
 		CreatorAddress:  session.CreatorAddress,
 		CreatorDeviceID: "fl-coordinator",
 		RunnerID:        runnerID,
-		Nonce:           fmt.Sprintf("fl-%s-%d", session.ID.String(), session.CurrentRound),
+		Nonce:           fmt.Sprintf("fl-%s-%d-%d", session.ID.String(), session.CurrentRound, runnerIndex),
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
 	}
