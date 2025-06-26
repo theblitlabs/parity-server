@@ -1,6 +1,29 @@
-# Parity Protocol
+# Parity Server
 
-A decentralized compute network enabling trustless task execution with token incentives. Task creators can submit compute tasks (e.g., Docker containers, scripts) to a pool, while runners compete to execute them for rewards. Built with Go and blockchain technology for transparent, secure, and efficient distributed computing.
+The core orchestration server for the PLGenesis decentralized AI and compute network. Parity Server handles task distribution, LLM request routing, runner management, and blockchain interactions. It provides a robust REST API for clients and manages the entire network coordination.
+
+## 🚀 Features
+
+### 🤖 LLM Infrastructure
+
+- **Model Discovery**: Automatic detection and listing of available LLM models across runners
+- **Async Processing**: Non-blocking prompt submission with real-time status tracking
+- **Smart Routing**: Intelligent distribution of LLM requests to capable runners
+- **Token Economics**: Comprehensive billing and reward mechanisms for LLM inference
+
+### ⚡ Compute Task Management
+
+- **Task Distribution**: Efficient routing of compute tasks to available runners
+- **Status Tracking**: Real-time monitoring of task progress and completion
+- **Load Balancing**: Intelligent workload distribution based on runner capabilities
+- **Error Recovery**: Robust handling of failures and automatic retry mechanisms
+
+### 🔒 Network Coordination
+
+- **Runner Registration**: Secure onboarding and capability reporting
+- **Heartbeat Monitoring**: Automatic detection of offline runners
+- **Webhook Management**: Real-time task notifications and status updates
+- **Blockchain Integration**: Transparent verification and reward distribution
 
 ## Table of Contents
 
@@ -194,6 +217,17 @@ parity-server --help
 ```
 
 ### API Documentation
+
+#### LLM Endpoints
+
+| Method | Endpoint                         | Description                        |
+| ------ | -------------------------------- | ---------------------------------- |
+| GET    | `/api/llm/models`                | List all available LLM models      |
+| POST   | `/api/llm/prompts`               | Submit a prompt for LLM processing |
+| GET    | `/api/llm/prompts/{id}`          | Get prompt status and response     |
+| GET    | `/api/llm/prompts`               | List recent prompts                |
+| POST   | `/api/llm/prompts/{id}/complete` | Complete prompt (internal use)     |
+| GET    | `/api/llm/billing/metrics`       | Get billing metrics for client     |
 
 #### Task Endpoints
 

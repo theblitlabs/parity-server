@@ -42,6 +42,7 @@ func registerRunnerRoutes(router *gin.RouterGroup, taskHandler *handlers.TaskHan
 func registerLLMRoutes(router *gin.RouterGroup, llmHandler *handlers.LLMHandler) {
 	llm := router.Group("/llm")
 	{
+		llm.GET("/models", llmHandler.GetAvailableModels)
 		llm.POST("/prompts", llmHandler.SubmitPrompt)
 		llm.GET("/prompts", llmHandler.ListPrompts)
 		llm.GET("/prompts/:id", llmHandler.GetPrompt)

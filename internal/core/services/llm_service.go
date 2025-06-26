@@ -55,10 +55,9 @@ func (s *LLMService) SubmitPrompt(ctx context.Context, clientID, prompt, modelNa
 		// Use background context to avoid cancellation when HTTP request ends
 		bgCtx := context.Background()
 		if err := s.runnerService.ForwardPromptToRunner(bgCtx, runner.DeviceID, promptReq); err != nil {
-			// Update status to failed if forwarding fails
-			promptReq.Status = models.PromptStatusFailed
-			s.promptRepo.Update(bgCtx, promptReq)
-			log.Error().Err(err).Str("runner_id", runner.DeviceID).Msg("Failed to forward prompt to runner")
+			// Keep status as processing so client keeps polling
+			// The task will remain in processing state until runner picks it up
+			log.Error().Err(err).Str("runner_id", runner.DeviceID).Msg("Failed to forward prompt to runner - task remains in processing state")
 		}
 	}()
 
@@ -123,6 +122,35 @@ func (s *LLMService) ListPrompts(ctx context.Context, clientID string, limit, of
 
 func (s *LLMService) GetBillingMetrics(ctx context.Context, clientID string) (*models.BillingMetric, error) {
 	return s.billingRepo.GetAggregatedMetrics(ctx, clientID)
+}
+
+func (s *LLMService) GetAvailableModels(ctx context.Context) ([]models.ModelCapability, error) {
+	runners, err := s.runnerRepo.GetOnlineRunners(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get online runners: %w", err)
+	}
+
+	// Use a map to deduplicate models
+	modelMap := make(map[string]models.ModelCapability)
+
+	for _, runner := range runners {
+		if runner.Status == models.RunnerStatusOnline {
+			for _, capability := range runner.ModelCapabilities {
+				if capability.IsLoaded {
+					// Use the model name as key to avoid duplicates
+					modelMap[capability.ModelName] = capability
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	models := make([]models.ModelCapability, 0, len(modelMap))
+	for _, model := range modelMap {
+		models = append(models, model)
+	}
+
+	return models, nil
 }
 
 func (s *LLMService) findAvailableRunner(ctx context.Context, modelName string) (*models.Runner, error) {

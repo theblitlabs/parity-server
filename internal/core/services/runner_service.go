@@ -262,7 +262,7 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 		Str("webhook", runner.Webhook).
 		Msg("Forwarding prompt to runner")
 
-	// Send HTTP request to runner webhook (with shorter timeout)
+	// Send HTTP request to runner webhook (with longer timeout)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", runner.Webhook, bytes.NewBuffer(messageBytes))
 	if err != nil {
 		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to create HTTP request")
@@ -272,7 +272,7 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{
-		Timeout: 5 * time.Second, // Shorter timeout for webhook forwarding
+		Timeout: 10 * time.Second, // Webhook should respond immediately
 	}
 
 	resp, err := client.Do(httpReq)

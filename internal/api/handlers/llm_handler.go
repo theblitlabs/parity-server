@@ -202,6 +202,39 @@ func (h *LLMHandler) CompletePrompt(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Prompt completed successfully"})
 }
 
+func (h *LLMHandler) GetAvailableModels(c *gin.Context) {
+	log := gologger.WithComponent("llm_handler")
+
+	models, err := h.llmService.GetAvailableModels(c.Request.Context())
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get available models")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	type ModelInfo struct {
+		ModelName string `json:"model_name"`
+		MaxTokens int    `json:"max_tokens"`
+		IsLoaded  bool   `json:"is_loaded"`
+	}
+
+	response := make([]ModelInfo, len(models))
+	for i, model := range models {
+		response[i] = ModelInfo{
+			ModelName: model.ModelName,
+			MaxTokens: model.MaxTokens,
+			IsLoaded:  model.IsLoaded,
+		}
+	}
+
+	log.Info().Int("model_count", len(models)).Msg("Available models retrieved successfully")
+
+	c.JSON(http.StatusOK, gin.H{
+		"models": response,
+		"count":  len(models),
+	})
+}
+
 func (h *LLMHandler) GetBillingMetrics(c *gin.Context) {
 	log := gologger.WithComponent("llm_handler")
 
