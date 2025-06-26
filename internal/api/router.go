@@ -36,7 +36,8 @@ func NewRouter(taskHandler *handlers.TaskHandler, runnerHandler *handlers.Runner
 
 func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, federatedLearningHandler *handlers.FederatedLearningHandler) {
 	api := r.engine.Group(r.endpoint)
-	v1.RegisterRoutes(api, taskHandler, runnerHandler, webhookHandler, llmHandler, federatedLearningHandler)
+	v1Group := api.Group("/v1")
+	v1.RegisterRoutes(v1Group, taskHandler, runnerHandler, webhookHandler, llmHandler, federatedLearningHandler)
 }
 
 func (r *Router) Engine() *gin.Engine {

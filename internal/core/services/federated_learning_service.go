@@ -676,3 +676,37 @@ func (s *FederatedLearningService) CompleteSession(ctx context.Context, sessionI
 	log.Info().Msg("FL session completed")
 	return nil
 }
+
+func (s *FederatedLearningService) GetTrainedModel(ctx context.Context, sessionID uuid.UUID) (map[string]interface{}, error) {
+	log := log.With().
+		Str("component", "federated_learning_service").
+		Str("session_id", sessionID.String()).
+		Logger()
+
+	session, err := s.flSessionRepo.GetByID(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("session not found: %w", err)
+	}
+
+	if session.GlobalModel == nil {
+		return nil, fmt.Errorf("no trained model available - session may not be completed or no training rounds completed")
+	}
+
+	var modelData map[string]interface{}
+	if err := json.Unmarshal(session.GlobalModel, &modelData); err != nil {
+		return nil, fmt.Errorf("failed to parse model data: %w", err)
+	}
+
+	result := map[string]interface{}{
+		"session_id":   session.ID.String(),
+		"session_name": session.Name,
+		"model_type":   session.ModelType,
+		"status":       string(session.Status),
+		"total_rounds": session.TotalRounds,
+		"completed_at": session.CompletedAt,
+		"model_data":   modelData,
+	}
+
+	log.Info().Msg("Trained model retrieved successfully")
+	return result, nil
+}

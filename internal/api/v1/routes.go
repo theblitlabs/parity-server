@@ -58,6 +58,7 @@ func registerFederatedLearningRoutes(router *gin.RouterGroup, flHandler *handler
 		fl.GET("/sessions", flHandler.ListSessions)
 		fl.GET("/sessions/:id", flHandler.GetSession)
 		fl.POST("/sessions/:id/start", flHandler.StartSession)
+		fl.GET("/sessions/:id/model", flHandler.GetModel)
 		fl.POST("/model-updates", flHandler.SubmitModelUpdate)
 		fl.GET("/sessions/:id/rounds/:roundNumber", flHandler.GetRound)
 	}

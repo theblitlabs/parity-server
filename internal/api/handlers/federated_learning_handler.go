@@ -211,3 +211,24 @@ func (h *FederatedLearningHandler) GetRound(c *gin.Context) {
 		"message":      "Round details endpoint - implementation pending",
 	})
 }
+
+func (h *FederatedLearningHandler) GetModel(c *gin.Context) {
+	log := log.With().Str("component", "fl_handler").Logger()
+
+	sessionIDStr := c.Param("id")
+	sessionID, err := uuid.Parse(sessionIDStr)
+	if err != nil {
+		log.Error().Err(err).Str("session_id", sessionIDStr).Msg("Invalid session ID")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session ID"})
+		return
+	}
+
+	model, err := h.service.GetTrainedModel(c.Request.Context(), sessionID)
+	if err != nil {
+		log.Error().Err(err).Str("session_id", sessionIDStr).Msg("Failed to get trained model")
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, model)
+}
