@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"gorm.io/driver/postgres"
@@ -14,9 +15,28 @@ func Connect(ctx context.Context, dbURL string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error opening database: %w", err)
 	}
-	if err := db.AutoMigrate(&models.Task{}, &models.TaskResult{}, &models.Runner{}); err != nil {
-		return nil, fmt.Errorf("error migrating database: %w", err)
+
+	// Run migrations with detailed logging
+	log.Println("Starting database migrations...")
+
+	modelsList := []interface{}{
+		&models.Task{},
+		&models.TaskResult{},
+		&models.Runner{},
+		&models.PromptRequest{},
+		&models.ModelCapability{},
+		&models.BillingMetric{},
 	}
+
+	for _, model := range modelsList {
+		log.Printf("Migrating table for model: %T", model)
+		if err := db.AutoMigrate(model); err != nil {
+			return nil, fmt.Errorf("error migrating %T: %w", model, err)
+		}
+		log.Printf("Successfully migrated table for model: %T", model)
+	}
+
+	log.Println("All database migrations completed successfully")
 
 	var count int64
 	if err := db.Model(&models.Runner{}).Where("last_heartbeat IS NULL").Count(&count).Error; err != nil {

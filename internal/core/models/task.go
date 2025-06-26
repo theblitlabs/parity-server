@@ -25,6 +25,7 @@ const (
 const (
 	TaskTypeDocker  TaskType = "docker"
 	TaskTypeCommand TaskType = "command"
+	TaskTypeLLM     TaskType = "llm"
 )
 
 type DockerConfig struct {
@@ -58,6 +59,9 @@ func (c *TaskConfig) Validate(taskType TaskType) error {
 		}
 	case TaskTypeCommand:
 		// Command can be empty for both Docker and Command tasks
+	case TaskTypeLLM:
+		// LLM tasks don't require Docker image or command validation
+		// Validation for model and prompt is done at the environment level
 	default:
 		return fmt.Errorf("unsupported task type: %s", taskType)
 	}
@@ -72,6 +76,7 @@ type Task struct {
 	Status          TaskStatus         `json:"status" gorm:"type:varchar(50)"`
 	Config          json.RawMessage    `json:"config" gorm:"type:jsonb"`
 	Environment     *EnvironmentConfig `json:"environment" gorm:"type:jsonb"`
+	Reward          float64            `json:"reward,omitempty" gorm:"type:decimal(20,8);default:0"`
 	CreatorAddress  string             `json:"creator_address" gorm:"type:varchar(42)"`
 	CreatorDeviceID string             `json:"creator_device_id" gorm:"type:varchar(255)"`
 	RunnerID        string             `json:"runner_id" gorm:"type:varchar(255)"`

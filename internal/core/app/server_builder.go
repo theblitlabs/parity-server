@@ -17,6 +17,7 @@ import (
 	"github.com/theblitlabs/parity-server/internal/api"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 	"github.com/theblitlabs/parity-server/internal/core/config"
+	"github.com/theblitlabs/parity-server/internal/core/ports"
 	"github.com/theblitlabs/parity-server/internal/core/services"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
 	"github.com/theblitlabs/parity-server/internal/storage/db"
@@ -118,8 +119,11 @@ type ServerBuilder struct {
 	repoFactory         *db.RepositoryFactory
 	taskRepo            *repositories.TaskRepository
 	runnerRepo          *repositories.RunnerRepository
+	promptRepo          ports.PromptRepository
+	billingRepo         ports.BillingRepository
 	taskService         *services.TaskService
 	runnerService       *services.RunnerService
+	llmService          *services.LLMService
 	heartbeatService    *services.HeartbeatService
 	webhookService      *services.WebhookService
 	storageService      services.StorageService
@@ -128,6 +132,7 @@ type ServerBuilder struct {
 	taskHandler         *handlers.TaskHandler
 	runnerHandler       *handlers.RunnerHandler
 	webhookHandler      *handlers.WebhookHandler
+	llmHandler          *handlers.LLMHandler
 	httpServer          *http.Server
 	stopChannel         chan struct{}
 	monitorCtx          context.Context
@@ -176,6 +181,8 @@ func (sb *ServerBuilder) InitRepositories() *ServerBuilder {
 
 	sb.taskRepo = sb.repoFactory.TaskRepository()
 	sb.runnerRepo = sb.repoFactory.RunnerRepository()
+	sb.promptRepo = repositories.NewPromptRepository(gormDB)
+	sb.billingRepo = repositories.NewBillingRepository(gormDB)
 
 	return sb
 }
@@ -203,6 +210,7 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 	sb.storageService = storageService
 
 	sb.verificationService = services.NewVerificationService(sb.taskRepo)
+	sb.llmService = services.NewLLMService(sb.promptRepo, sb.billingRepo, sb.runnerRepo, sb.runnerService)
 
 	return sb
 }
@@ -312,11 +320,13 @@ func (sb *ServerBuilder) InitRouter() *ServerBuilder {
 	sb.runnerHandler = handlers.NewRunnerHandler(sb.taskService, sb.runnerService)
 	sb.webhookHandler = handlers.NewWebhookHandler(sb.webhookService, sb.runnerService)
 	sb.webhookHandler.SetStopChannel(sb.stopChannel)
+	sb.llmHandler = handlers.NewLLMHandler(sb.llmService)
 
 	router := api.NewRouter(
 		sb.taskHandler,
 		sb.runnerHandler,
 		sb.webhookHandler,
+		sb.llmHandler,
 		sb.config.Server.Endpoint,
 	)
 

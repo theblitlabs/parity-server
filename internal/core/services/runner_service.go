@@ -1,9 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -20,6 +24,9 @@ type RunnerRepository interface {
 	Update(ctx context.Context, runner *models.Runner) (*models.Runner, error)
 	ListByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error)
 	UpdateRunnersToOffline(ctx context.Context, heartbeatTimeout time.Duration) (int64, []string, error)
+	GetOnlineRunners(ctx context.Context) ([]*models.Runner, error)
+	GetRunnerByDeviceID(ctx context.Context, deviceID string) (*models.Runner, error)
+	UpdateModelCapabilities(ctx context.Context, runnerID string, capabilities []models.ModelCapability) error
 }
 
 type RunnerService struct {
@@ -175,6 +182,131 @@ func (s *RunnerService) UpdateRunnerStatus(ctx context.Context, runner *models.R
 	}
 
 	return updatedRunner, nil
+}
+
+func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID string, promptReq *models.PromptRequest) error {
+	log := gologger.WithComponent("runner_service")
+
+	runner, err := s.repo.Get(ctx, runnerID)
+	if err != nil {
+		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to get runner")
+		return fmt.Errorf("failed to get runner: %w", err)
+	}
+
+	if runner.Webhook == "" {
+		log.Error().Str("runner_id", runnerID).Msg("Runner has no webhook URL")
+		return fmt.Errorf("runner %s has no webhook URL", runnerID)
+	}
+
+	// Convert PromptRequest to Task
+	configData, err := json.Marshal(models.TaskConfig{
+		Env: map[string]string{
+			"MODEL":  promptReq.ModelName,
+			"PROMPT": promptReq.Prompt,
+		},
+	})
+	if err != nil {
+		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to marshal task config")
+		return fmt.Errorf("failed to marshal task config: %w", err)
+	}
+
+	task := &models.Task{
+		ID:          promptReq.ID,
+		Title:       fmt.Sprintf("LLM Prompt: %s", promptReq.ModelName),
+		Description: fmt.Sprintf("Generate response for prompt using model %s", promptReq.ModelName),
+		Type:        models.TaskTypeLLM,
+		Config:      configData,
+		Environment: &models.EnvironmentConfig{
+			Type: "llm",
+			Config: map[string]interface{}{
+				"MODEL":  promptReq.ModelName,
+				"PROMPT": promptReq.Prompt,
+			},
+		},
+		CreatorAddress:  "0x0000000000000000000000000000000000000000", // Default for LLM tasks
+		CreatorDeviceID: "server",                                     // Mark as coming from server
+		RunnerID:        runnerID,
+		Reward:          0.0,                                                                  // Default reward for LLM tasks
+		Nonce:           hex.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano()))), // Hex-encoded nonce
+		Status:          models.TaskStatusPending,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+
+	// Create webhook message
+	type WebhookMessage struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload"`
+	}
+
+	taskPayload, err := json.Marshal(task)
+	if err != nil {
+		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to marshal task payload")
+		return fmt.Errorf("failed to marshal task payload: %w", err)
+	}
+
+	message := WebhookMessage{
+		Type:    "available_tasks",
+		Payload: taskPayload,
+	}
+
+	messageBytes, err := json.Marshal(message)
+	if err != nil {
+		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to marshal webhook message")
+		return fmt.Errorf("failed to marshal webhook message: %w", err)
+	}
+
+	log.Info().
+		Str("runner_id", runnerID).
+		Str("prompt_id", promptReq.ID.String()).
+		Str("webhook", runner.Webhook).
+		Msg("Forwarding prompt to runner")
+
+	// Send HTTP request to runner webhook (with shorter timeout)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", runner.Webhook, bytes.NewBuffer(messageBytes))
+	if err != nil {
+		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to create HTTP request")
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{
+		Timeout: 5 * time.Second, // Shorter timeout for webhook forwarding
+	}
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		log.Error().Err(err).Str("runner_id", runnerID).Str("webhook", runner.Webhook).Msg("Failed to send request to runner webhook")
+		return fmt.Errorf("failed to send request to runner webhook: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Error().
+			Int("status_code", resp.StatusCode).
+			Str("runner_id", runnerID).
+			Str("webhook", runner.Webhook).
+			Msg("Runner webhook returned non-OK status")
+		return fmt.Errorf("runner webhook returned status %d", resp.StatusCode)
+	}
+
+	log.Info().
+		Str("runner_id", runnerID).
+		Str("prompt_id", promptReq.ID.String()).
+		Int("status_code", resp.StatusCode).
+		Msg("Prompt forwarded to runner successfully")
+
+	return nil
+}
+
+func (s *RunnerService) UpdateModelCapabilities(ctx context.Context, runnerID string, capabilities []models.ModelCapability) error {
+	if repo, ok := s.repo.(interface {
+		UpdateModelCapabilities(ctx context.Context, runnerID string, capabilities []models.ModelCapability) error
+	}); ok {
+		return repo.UpdateModelCapabilities(ctx, runnerID, capabilities)
+	}
+	return fmt.Errorf("repository does not support model capabilities")
 }
 
 func (s *RunnerService) UpdateOfflineRunners(ctx context.Context) error {

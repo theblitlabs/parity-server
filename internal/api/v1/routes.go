@@ -39,7 +39,19 @@ func registerRunnerRoutes(router *gin.RouterGroup, taskHandler *handlers.TaskHan
 	}
 }
 
-func RegisterRoutes(api *gin.RouterGroup, taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler) {
+func registerLLMRoutes(router *gin.RouterGroup, llmHandler *handlers.LLMHandler) {
+	llm := router.Group("/llm")
+	{
+		llm.POST("/prompts", llmHandler.SubmitPrompt)
+		llm.GET("/prompts", llmHandler.ListPrompts)
+		llm.GET("/prompts/:id", llmHandler.GetPrompt)
+		llm.POST("/prompts/:id/complete", llmHandler.CompletePrompt)
+		llm.GET("/billing/metrics", llmHandler.GetBillingMetrics)
+	}
+}
+
+func RegisterRoutes(api *gin.RouterGroup, taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler) {
 	registerTaskRoutes(api, taskHandler)
 	registerRunnerRoutes(api, taskHandler, runnerHandler, webhookHandler)
+	registerLLMRoutes(api, llmHandler)
 }
