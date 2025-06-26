@@ -29,7 +29,7 @@ func NewRunnerHandler(taskService *services.TaskService, runnerService *services
 }
 
 func (h *RunnerHandler) RegisterRunner(c *gin.Context) {
-	var runner coremodels.Runner
+	var req models.RegisterRunnerRequest
 	log := gologger.WithComponent("runner_handler")
 
 	rawBody, err := io.ReadAll(c.Request.Body)
@@ -42,10 +42,15 @@ func (h *RunnerHandler) RegisterRunner(c *gin.Context) {
 
 	log.Info().Str("raw_body", string(rawBody)).Msg("Incoming request body")
 
-	if err := c.ShouldBindJSON(&runner); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Error().Err(err).Msg("Invalid request body")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
+	}
+
+	runner := coremodels.Runner{
+		WalletAddress: req.WalletAddress,
+		Webhook:       req.Webhook,
 	}
 
 	log.Info().Fields(map[string]interface{}{
@@ -75,6 +80,22 @@ func (h *RunnerHandler) RegisterRunner(c *gin.Context) {
 		log.Error().Err(err).Msg("Failed to create/update runner")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	if len(req.ModelCapabilities) > 0 {
+		capabilities := make([]coremodels.ModelCapability, len(req.ModelCapabilities))
+		for i, cap := range req.ModelCapabilities {
+			capabilities[i] = coremodels.ModelCapability{
+				RunnerID:  deviceID,
+				ModelName: cap.ModelName,
+				IsLoaded:  cap.IsLoaded,
+				MaxTokens: cap.MaxTokens,
+			}
+		}
+
+		if err := h.runnerService.UpdateModelCapabilities(c.Request.Context(), deviceID, capabilities); err != nil {
+			log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to update model capabilities")
+		}
 	}
 
 	log.Info().Fields(map[string]interface{}{

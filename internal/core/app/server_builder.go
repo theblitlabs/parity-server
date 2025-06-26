@@ -17,6 +17,7 @@ import (
 	"github.com/theblitlabs/parity-server/internal/api"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 	"github.com/theblitlabs/parity-server/internal/core/config"
+	"github.com/theblitlabs/parity-server/internal/core/ports"
 	"github.com/theblitlabs/parity-server/internal/core/services"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
 	"github.com/theblitlabs/parity-server/internal/storage/db"
@@ -113,27 +114,36 @@ func (s *Server) Shutdown(ctx context.Context) {
 }
 
 type ServerBuilder struct {
-	config              *config.Config
-	dbManager           *db.DBManager
-	repoFactory         *db.RepositoryFactory
-	taskRepo            *repositories.TaskRepository
-	runnerRepo          *repositories.RunnerRepository
-	taskService         *services.TaskService
-	runnerService       *services.RunnerService
-	heartbeatService    *services.HeartbeatService
-	webhookService      *services.WebhookService
-	s3Service           *services.S3Service
-	verificationService *services.VerificationService
-	stakeWallet         *walletsdk.StakeWallet
-	taskHandler         *handlers.TaskHandler
-	runnerHandler       *handlers.RunnerHandler
-	webhookHandler      *handlers.WebhookHandler
-	httpServer          *http.Server
-	stopChannel         chan struct{}
-	monitorCtx          context.Context
-	monitorCancel       context.CancelFunc
-	monitorWg           *sync.WaitGroup
-	err                 error
+	config                   *config.Config
+	dbManager                *db.DBManager
+	repoFactory              *db.RepositoryFactory
+	taskRepo                 *repositories.TaskRepository
+	runnerRepo               *repositories.RunnerRepository
+	promptRepo               ports.PromptRepository
+	billingRepo              ports.BillingRepository
+	flSessionRepo            ports.FLSessionRepository
+	flRoundRepo              ports.FLRoundRepository
+	flParticipantRepo        ports.FLParticipantRepository
+	taskService              *services.TaskService
+	runnerService            *services.RunnerService
+	llmService               *services.LLMService
+	heartbeatService         *services.HeartbeatService
+	webhookService           *services.WebhookService
+	storageService           services.StorageService
+	verificationService      *services.VerificationService
+	federatedLearningService *services.FederatedLearningService
+	stakeWallet              *walletsdk.StakeWallet
+	taskHandler              *handlers.TaskHandler
+	runnerHandler            *handlers.RunnerHandler
+	webhookHandler           *handlers.WebhookHandler
+	llmHandler               *handlers.LLMHandler
+	federatedLearningHandler *handlers.FederatedLearningHandler
+	httpServer               *http.Server
+	stopChannel              chan struct{}
+	monitorCtx               context.Context
+	monitorCancel            context.CancelFunc
+	monitorWg                *sync.WaitGroup
+	err                      error
 }
 
 func NewServerBuilder(cfg *config.Config) *ServerBuilder {
@@ -176,6 +186,11 @@ func (sb *ServerBuilder) InitRepositories() *ServerBuilder {
 
 	sb.taskRepo = sb.repoFactory.TaskRepository()
 	sb.runnerRepo = sb.repoFactory.RunnerRepository()
+	sb.promptRepo = repositories.NewPromptRepository(gormDB)
+	sb.billingRepo = repositories.NewBillingRepository(gormDB)
+	sb.flSessionRepo = sb.repoFactory.FLSessionRepository()
+	sb.flRoundRepo = sb.repoFactory.FLRoundRepository()
+	sb.flParticipantRepo = sb.repoFactory.FLParticipantRepository()
 
 	return sb
 }
@@ -186,7 +201,7 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 	}
 
 	rewardCalculator := services.NewRewardCalculator()
-	rewardClient := services.NewEthereumRewardClient(sb.config)
+	rewardClient := services.NewFilecoinRewardClient(sb.config)
 
 	sb.runnerService = services.NewRunnerService(sb.runnerRepo)
 	sb.taskService = services.NewTaskService(sb.taskRepo, rewardCalculator.(*services.RewardCalculator), sb.runnerService)
@@ -195,14 +210,22 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 
 	sb.webhookService = services.NewWebhookService(sb.taskService)
 
-	s3Service, err := services.NewS3Service(sb.config)
+	storageService, err := services.NewStorageService(sb.config)
 	if err != nil {
-		sb.err = fmt.Errorf("failed to initialize S3 service: %w", err)
+		sb.err = fmt.Errorf("failed to initialize storage service: %w", err)
 		return sb
 	}
-	sb.s3Service = s3Service
+	sb.storageService = storageService
 
 	sb.verificationService = services.NewVerificationService(sb.taskRepo)
+	sb.llmService = services.NewLLMService(sb.promptRepo, sb.billingRepo, sb.runnerRepo, sb.runnerService)
+	sb.federatedLearningService = services.NewFederatedLearningService(
+		sb.flSessionRepo,
+		sb.flRoundRepo,
+		sb.flParticipantRepo,
+		sb.runnerService,
+		sb.taskService,
+	)
 
 	return sb
 }
@@ -276,9 +299,9 @@ func (sb *ServerBuilder) InitWallet() *ServerBuilder {
 	}
 
 	walletClient, err := walletsdk.NewClient(walletsdk.ClientConfig{
-		RPCURL:       sb.config.Ethereum.RPC,
-		ChainID:      sb.config.Ethereum.ChainID,
-		TokenAddress: common.HexToAddress(sb.config.Ethereum.TokenAddress),
+		RPCURL:       sb.config.FilecoinNetwork.RPC,
+		ChainID:      sb.config.FilecoinNetwork.ChainID,
+		TokenAddress: common.HexToAddress(sb.config.FilecoinNetwork.TokenAddress),
 		PrivateKey:   common.Bytes2Hex(crypto.FromECDSA(privateKey)),
 	})
 	if err != nil {
@@ -288,8 +311,8 @@ func (sb *ServerBuilder) InitWallet() *ServerBuilder {
 
 	stakeWallet, err := walletsdk.NewStakeWallet(
 		walletClient,
-		common.HexToAddress(sb.config.Ethereum.StakeWalletAddress),
-		common.HexToAddress(sb.config.Ethereum.TokenAddress),
+		common.HexToAddress(sb.config.FilecoinNetwork.StakeWalletAddress),
+		common.HexToAddress(sb.config.FilecoinNetwork.TokenAddress),
 	)
 	if err != nil {
 		sb.err = fmt.Errorf("failed to create stake wallet: %w", err)
@@ -305,18 +328,22 @@ func (sb *ServerBuilder) InitRouter() *ServerBuilder {
 		return sb
 	}
 
-	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.s3Service, sb.verificationService)
+	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.storageService, sb.verificationService)
 	sb.taskHandler.SetStakeWallet(sb.stakeWallet)
 	sb.taskHandler.SetWebhookService(sb.webhookService)
 
 	sb.runnerHandler = handlers.NewRunnerHandler(sb.taskService, sb.runnerService)
 	sb.webhookHandler = handlers.NewWebhookHandler(sb.webhookService, sb.runnerService)
 	sb.webhookHandler.SetStopChannel(sb.stopChannel)
+	sb.llmHandler = handlers.NewLLMHandler(sb.llmService)
+	sb.federatedLearningHandler = handlers.NewFederatedLearningHandler(sb.federatedLearningService)
 
 	router := api.NewRouter(
 		sb.taskHandler,
 		sb.runnerHandler,
 		sb.webhookHandler,
+		sb.llmHandler,
+		sb.federatedLearningHandler,
 		sb.config.Server.Endpoint,
 	)
 

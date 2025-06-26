@@ -1,6 +1,29 @@
-# Parity Protocol
+# Parity Server
 
-A decentralized compute network enabling trustless task execution with token incentives. Task creators can submit compute tasks (e.g., Docker containers, scripts) to a pool, while runners compete to execute them for rewards. Built with Go and blockchain technology for transparent, secure, and efficient distributed computing.
+The core orchestration server for the PLGenesis decentralized AI and compute network. Parity Server handles task distribution, LLM request routing, runner management, and blockchain interactions. It provides a robust REST API for clients and manages the entire network coordination.
+
+## 🚀 Features
+
+### 🤖 LLM Infrastructure
+
+- **Model Discovery**: Automatic detection and listing of available LLM models across runners
+- **Async Processing**: Non-blocking prompt submission with real-time status tracking
+- **Smart Routing**: Intelligent distribution of LLM requests to capable runners
+- **Token Economics**: Comprehensive billing and reward mechanisms for LLM inference
+
+### ⚡ Compute Task Management
+
+- **Task Distribution**: Efficient routing of compute tasks to available runners
+- **Status Tracking**: Real-time monitoring of task progress and completion
+- **Load Balancing**: Intelligent workload distribution based on runner capabilities
+- **Error Recovery**: Robust handling of failures and automatic retry mechanisms
+
+### 🔒 Network Coordination
+
+- **Runner Registration**: Secure onboarding and capability reporting
+- **Heartbeat Monitoring**: Automatic detection of offline runners
+- **Webhook Management**: Real-time task notifications and status updates
+- **Blockchain Integration**: Transparent verification and reward distribution
 
 ## Table of Contents
 
@@ -123,11 +146,11 @@ The Docker setup includes:
 Create a `.env` file with the following configuration:
 
 ```env
-# Ethereum Configuration
-ETHEREUM_CHAIN_ID=11155111                                                         # Sepolia testnet
-ETHEREUM_RPC=https://eth-sepolia.g.alchemy.com/v2/API_KEY
-ETHEREUM_STAKE_WALLET_ADDRESS=0x261259e9467E042DBBF372906e17b94fC06942f2        # Stake wallet address
-ETHEREUM_TOKEN_ADDRESS=0x844303bcC1a347bE6B409Ae159b4040d84876024              # Token contract address
+# Filecoin Network Configuration
+FILECOIN_CHAIN_ID=314159                                                         # Filecoin Calibration testnet
+FILECOIN_RPC=https://api.calibration.node.glif.io/rpc/v1
+FILECOIN_STAKE_WALLET_ADDRESS=0x7465e7a637f66cb7b294b856a25bc84abff1d247        # Stake wallet address
+FILECOIN_TOKEN_ADDRESS=0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0              # Token contract address
 
 # Database Configuration
 DATABASE_USERNAME=postgres
@@ -136,9 +159,10 @@ DATABASE_HOST=localhost
 DATABASE_PORT=5432
 DATABASE_DATABASE_NAME=parity
 
-# AWS Configuration
-AWS_REGION=ap-south-1
-AWS_BUCKET_NAME=dev-parity-docker-images
+# Filecoin Storage Configuration
+FILECOIN_IPFS_ENDPOINT=http://localhost:5001
+FILECOIN_GATEWAY_URL=https://gateway.pinata.cloud
+FILECOIN_CREATE_STORAGE_DEALS=false
 
 # Server Configuration
 SERVER_PORT=8080
@@ -156,18 +180,18 @@ SCHEDULER_INTERVAL=10
 
 > **Important**: The above configuration shows the current Sepolia testnet setup. Key contract details:
 >
-> - Network: Sepolia Testnet (Chain ID: 11155111)
-> - Token Contract: [`0x844303bcC1a347bE6B409Ae159b4040d84876024`](https://sepolia.etherscan.io/address/0x844303bcC1a347bE6B409Ae159b4040d84876024)
-> - Stake Wallet: [`0x261259e9467E042DBBF372906e17b94fC06942f2`](https://sepolia.etherscan.io/address/0x261259e9467E042DBBF372906e17b94fC06942f2)
+> - Network: Filecoin Calibration Testnet (Chain ID: 314159)
+> - Token Contract: [`0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0`](https://filfox.info/en/address/0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0)
+> - Stake Wallet: [`0x7465e7a637f66cb7b294b856a25bc84abff1d247`](https://filfox.info/en/address/0x7465e7a637f66cb7b294b856a25bc84abff1d247)
 >
 > For production deployment, you should replace these values with your own:
 >
 > - Database credentials
-> - Ethereum RPC endpoint
+> - Filecoin RPC endpoint
 > - Network chain ID
 > - Token contract address
 > - Stake wallet address
-> - AWS credentials and region
+> - Filecoin/IPFS endpoints and gateway
 > - Scheduler interval
 
 ### CLI Usage
@@ -193,6 +217,17 @@ parity-server --help
 ```
 
 ### API Documentation
+
+#### LLM Endpoints
+
+| Method | Endpoint                         | Description                        |
+| ------ | -------------------------------- | ---------------------------------- |
+| GET    | `/api/llm/models`                | List all available LLM models      |
+| POST   | `/api/llm/prompts`               | Submit a prompt for LLM processing |
+| GET    | `/api/llm/prompts/{id}`          | Get prompt status and response     |
+| GET    | `/api/llm/prompts`               | List recent prompts                |
+| POST   | `/api/llm/prompts/{id}/complete` | Complete prompt (internal use)     |
+| GET    | `/api/llm/billing/metrics`       | Get billing metrics for client     |
 
 #### Task Endpoints
 

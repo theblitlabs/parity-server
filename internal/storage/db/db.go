@@ -29,7 +29,7 @@ func (m *DBManager) Connect(ctx context.Context, dbURL string) error {
 		return fmt.Errorf("error opening database: %w", err)
 	}
 
-	if err := db.AutoMigrate(&models.Task{}, &models.TaskResult{}, &models.Runner{}); err != nil {
+	if err := db.AutoMigrate(&models.Task{}, &models.TaskResult{}, &models.Runner{}, &models.FederatedLearningSession{}, &models.FederatedLearningRound{}, &models.FLRoundParticipant{}); err != nil {
 		return fmt.Errorf("error migrating database: %w", err)
 	}
 

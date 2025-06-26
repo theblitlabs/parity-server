@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/theblitlabs/parity-server/internal/core/models"
@@ -92,10 +93,32 @@ func (r *RunnerRepository) Update(ctx context.Context, runner *models.Runner) (*
 
 func (r *RunnerRepository) ListByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error) {
 	var runners []*models.Runner
+
+	// Enhanced logging for debugging
+	var count int64
+	r.db.WithContext(ctx).Model(&models.Runner{}).Count(&count)
+	fmt.Printf("DEBUG: Total runners in database: %d\n", count)
+
+	var onlineCount int64
+	r.db.WithContext(ctx).Model(&models.Runner{}).Where("status = ?", "online").Count(&onlineCount)
+	fmt.Printf("DEBUG: Runners with 'online' status: %d\n", onlineCount)
+
+	var allStatuses []string
+	r.db.WithContext(ctx).Model(&models.Runner{}).Pluck("status", &allStatuses)
+	fmt.Printf("DEBUG: All runner statuses: %v\n", allStatuses)
+
 	result := r.db.WithContext(ctx).Where("status = ?", status).Find(&runners)
 	if result.Error != nil {
+		fmt.Printf("DEBUG: Error in ListByStatus query: %v\n", result.Error)
 		return nil, result.Error
 	}
+
+	fmt.Printf("DEBUG: Found %d runners with status '%s'\n", len(runners), status)
+	for i, runner := range runners {
+		fmt.Printf("DEBUG: Runner %d: ID=%s, Status=%s, LastHeartbeat=%v\n",
+			i, runner.DeviceID, runner.Status, runner.LastHeartbeat)
+	}
+
 	return runners, nil
 }
 
@@ -135,4 +158,42 @@ func (r *RunnerRepository) UpdateRunnersToOffline(ctx context.Context, heartbeat
 	}
 
 	return result.RowsAffected, deviceIDs, nil
+}
+
+func (r *RunnerRepository) GetOnlineRunners(ctx context.Context) ([]*models.Runner, error) {
+	var runners []*models.Runner
+	err := r.db.WithContext(ctx).
+		Preload("ModelCapabilities").
+		Where("status = ?", models.RunnerStatusOnline).
+		Find(&runners).Error
+	return runners, err
+}
+
+func (r *RunnerRepository) GetRunnerByDeviceID(ctx context.Context, deviceID string) (*models.Runner, error) {
+	var runner models.Runner
+	err := r.db.WithContext(ctx).
+		Preload("ModelCapabilities").
+		Where("device_id = ?", deviceID).
+		First(&runner).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrRunnerNotFound
+	}
+	return &runner, err
+}
+
+func (r *RunnerRepository) UpdateModelCapabilities(ctx context.Context, runnerID string, capabilities []models.ModelCapability) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("runner_id = ?", runnerID).Delete(&models.ModelCapability{}).Error; err != nil {
+			return err
+		}
+
+		if len(capabilities) > 0 {
+			for i := range capabilities {
+				capabilities[i].RunnerID = runnerID
+			}
+			return tx.Create(&capabilities).Error
+		}
+
+		return nil
+	})
 }

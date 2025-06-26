@@ -24,22 +24,22 @@ const (
 	KeystoreFileName = "keystore.json"
 )
 
-type EthereumRewardClient struct {
+type FilecoinRewardClient struct {
 	cfg         *config.Config
 	stakeWallet ports.StakeWallet
 }
 
-func NewEthereumRewardClient(cfg *config.Config) *EthereumRewardClient {
-	return &EthereumRewardClient{
+func NewFilecoinRewardClient(cfg *config.Config) *FilecoinRewardClient {
+	return &FilecoinRewardClient{
 		cfg: cfg,
 	}
 }
 
-func (c *EthereumRewardClient) SetStakeWallet(sw ports.StakeWallet) {
+func (c *FilecoinRewardClient) SetStakeWallet(sw ports.StakeWallet) {
 	c.stakeWallet = sw
 }
 
-func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) error {
+func (c *FilecoinRewardClient) DistributeRewards(result *models.TaskResult) error {
 	log := gologger.WithComponent("rewards").With().
 		Str("task", result.TaskID.String()).
 		Str("device", result.DeviceID).
@@ -77,9 +77,9 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 	}
 
 	client, err := walletsdk.NewClient(walletsdk.ClientConfig{
-		RPCURL:       c.cfg.Ethereum.RPC,
-		ChainID:      int64(c.cfg.Ethereum.ChainID),
-		TokenAddress: common.HexToAddress(c.cfg.Ethereum.TokenAddress),
+		RPCURL:       c.cfg.FilecoinNetwork.RPC,
+		ChainID:      int64(c.cfg.FilecoinNetwork.ChainID),
+		TokenAddress: common.HexToAddress(c.cfg.FilecoinNetwork.TokenAddress),
 		PrivateKey:   common.Bytes2Hex(crypto.FromECDSA(privateKey)),
 	})
 	if err != nil {
@@ -89,15 +89,15 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 
 	log.Debug().
 		Str("wallet", client.Address().Hex()).
-		Str("rpc", c.cfg.Ethereum.RPC).
-		Int64("chain", c.cfg.Ethereum.ChainID).
+		Str("rpc", c.cfg.FilecoinNetwork.RPC).
+		Int64("chain", c.cfg.FilecoinNetwork.ChainID).
 		Msg("Client initialized")
 
-	stakeWalletAddr := common.HexToAddress(c.cfg.Ethereum.StakeWalletAddress)
+	stakeWalletAddr := common.HexToAddress(c.cfg.FilecoinNetwork.StakeWalletAddress)
 	stakeWallet, err := walletsdk.NewStakeWallet(
 		client,
 		stakeWalletAddr,
-		common.HexToAddress(c.cfg.Ethereum.TokenAddress),
+		common.HexToAddress(c.cfg.FilecoinNetwork.TokenAddress),
 	)
 	if err != nil {
 		log.Error().Err(err).
@@ -174,7 +174,7 @@ func (c *EthereumRewardClient) DistributeRewards(result *models.TaskResult) erro
 }
 
 // distributeWithMockWallet handles reward distribution using a mock wallet for testing
-func (c *EthereumRewardClient) distributeWithMockWallet(log zerolog.Logger, result *models.TaskResult) error {
+func (c *FilecoinRewardClient) distributeWithMockWallet(log zerolog.Logger, result *models.TaskResult) error {
 	stakeInfo, err := c.stakeWallet.GetStakeInfo(result.DeviceID)
 	if err != nil {
 		log.Error().Err(err).Msg("Stake info check failed")

@@ -92,10 +92,10 @@ func ExecuteAuth(privateKey string, configPath string) error {
 		return fmt.Errorf("failed to save private key: %w", err)
 	}
 
-	tokenAddress := common.HexToAddress(cfg.Ethereum.TokenAddress)
+	tokenAddress := common.HexToAddress(cfg.FilecoinNetwork.TokenAddress)
 	client, err := walletsdk.NewClient(walletsdk.ClientConfig{
-		RPCURL:       cfg.Ethereum.RPC,
-		ChainID:      cfg.Ethereum.ChainID,
+		RPCURL:       cfg.FilecoinNetwork.RPC,
+		ChainID:      cfg.FilecoinNetwork.ChainID,
 		PrivateKey:   privateKey,
 		TokenAddress: tokenAddress,
 	})
