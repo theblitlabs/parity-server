@@ -52,4 +52,5 @@ type FederatedLearningService interface {
 	CheckRoundCompletion(ctx context.Context, sessionID, roundID uuid.UUID) error
 	AggregateRound(ctx context.Context, sessionID, roundID uuid.UUID) error
 	CompleteSession(ctx context.Context, sessionID uuid.UUID) error
+	GetTrainedModel(ctx context.Context, sessionID uuid.UUID) (map[string]interface{}, error)
 }

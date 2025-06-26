@@ -255,6 +255,33 @@ parity-server --help
 | GET    | /api/runners/stats               | Get runner statistics |
 | POST   | /api/runners/heartbeat           | Send heartbeat        |
 
+#### Federated Learning Endpoints
+
+| Method | Endpoint                                       | Description          |
+| ------ | ---------------------------------------------- | -------------------- |
+| POST   | /api/v1/federated-learning/sessions            | Create FL session    |
+| GET    | /api/v1/federated-learning/sessions            | List FL sessions     |
+| GET    | /api/v1/federated-learning/sessions/{id}       | Get session details  |
+| POST   | /api/v1/federated-learning/sessions/{id}/start | Start FL session     |
+| GET    | /api/v1/federated-learning/sessions/{id}/model | Get trained model    |
+| POST   | /api/v1/federated-learning/model-updates       | Submit model updates |
+
+#### Storage Endpoints
+
+| Method | Endpoint                    | Description                  |
+| ------ | --------------------------- | ---------------------------- |
+| POST   | /api/storage/upload         | Upload file to IPFS/Filecoin |
+| GET    | /api/storage/download/{cid} | Download file by CID         |
+| GET    | /api/storage/info/{cid}     | Get file information         |
+| POST   | /api/storage/pin/{cid}      | Pin file to IPFS             |
+
+#### Health & Status Endpoints
+
+| Method | Endpoint    | Description   |
+| ------ | ----------- | ------------- |
+| GET    | /api/health | Health check  |
+| GET    | /api/status | System status |
+
 ### Contributing
 
 1. Fork the repository

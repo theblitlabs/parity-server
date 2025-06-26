@@ -33,7 +33,7 @@ type FederatedLearningSession struct {
 	TrainingData    TrainingDataConfig `json:"training_data" gorm:"type:jsonb"`
 	CurrentRound    int                `json:"current_round" gorm:"default:0"`
 	TotalRounds     int                `json:"total_rounds" gorm:"not null"`
-	MinParticipants int                `json:"min_participants" gorm:"default:2"`
+	MinParticipants int                `json:"min_participants"`
 	CreatorAddress  string             `json:"creator_address" gorm:"type:varchar(42);not null"`
 	CreatedAt       time.Time          `json:"created_at" gorm:"type:timestamp"`
 	UpdatedAt       time.Time          `json:"updated_at" gorm:"type:timestamp"`

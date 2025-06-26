@@ -26,7 +26,7 @@ func Logging() gin.HandlerFunc {
 		}
 
 		// Skip logging successful heartbeat requests
-		isHeartbeat := path == "/api/runners/heartbeat"
+		isHeartbeat := path == "/api/v1/runners/heartbeat"
 
 		if !isHeartbeat {
 			log := gologger.Get().With().
