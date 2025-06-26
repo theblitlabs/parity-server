@@ -146,11 +146,11 @@ The Docker setup includes:
 Create a `.env` file with the following configuration:
 
 ```env
-# Ethereum Configuration
-ETHEREUM_CHAIN_ID=314159                                                         # Filecoin Calibration testnet
-ETHEREUM_RPC=https://api.calibration.node.glif.io/rpc/v1
-ETHEREUM_STAKE_WALLET_ADDRESS=0x7465e7a637f66cb7b294b856a25bc84abff1d247        # Stake wallet address
-ETHEREUM_TOKEN_ADDRESS=0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0              # Token contract address
+# Filecoin Network Configuration
+FILECOIN_CHAIN_ID=314159                                                         # Filecoin Calibration testnet
+FILECOIN_RPC=https://api.calibration.node.glif.io/rpc/v1
+FILECOIN_STAKE_WALLET_ADDRESS=0x7465e7a637f66cb7b294b856a25bc84abff1d247        # Stake wallet address
+FILECOIN_TOKEN_ADDRESS=0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0              # Token contract address
 
 # Database Configuration
 DATABASE_USERNAME=postgres
@@ -187,7 +187,7 @@ SCHEDULER_INTERVAL=10
 > For production deployment, you should replace these values with your own:
 >
 > - Database credentials
-> - Ethereum RPC endpoint
+> - Filecoin RPC endpoint
 > - Network chain ID
 > - Token contract address
 > - Stake wallet address

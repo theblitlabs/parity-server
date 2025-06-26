@@ -9,11 +9,11 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig    `mapstructure:"SERVER"`
-	Database  DatabaseConfig  `mapstructure:"DATABASE"`
-	Ethereum  EthereumConfig  `mapstructure:"ETHEREUM"`
-	Filecoin  FilecoinConfig  `mapstructure:"FILECOIN"`
-	Scheduler SchedulerConfig `mapstructure:"SCHEDULER"`
+	Server          ServerConfig          `mapstructure:"SERVER"`
+	Database        DatabaseConfig        `mapstructure:"DATABASE"`
+	FilecoinNetwork FilecoinNetworkConfig `mapstructure:"FILECOIN_NETWORK"`
+	Filecoin        FilecoinConfig        `mapstructure:"FILECOIN"`
+	Scheduler       SchedulerConfig       `mapstructure:"SCHEDULER"`
 }
 
 type ServerConfig struct {
@@ -36,7 +36,7 @@ type FilecoinConfig struct {
 	CreateStorageDeals bool   `mapstructure:"CREATE_STORAGE_DEALS"`
 }
 
-type EthereumConfig struct {
+type FilecoinNetworkConfig struct {
 	RPC                string `mapstructure:"RPC"`
 	ChainID            int64  `mapstructure:"CHAIN_ID"`
 	TokenAddress       string `mapstructure:"TOKEN_ADDRESS"`
@@ -146,11 +146,11 @@ func loadConfigFile(path string) (*Config, error) {
 		"CREATE_STORAGE_DEALS": v.GetBool("FILECOIN_CREATE_STORAGE_DEALS"),
 	})
 
-	v.SetDefault("ETHEREUM", map[string]interface{}{
-		"RPC":                  v.GetString("ETHEREUM_RPC"),
-		"CHAIN_ID":             v.GetInt64("ETHEREUM_CHAIN_ID"),
-		"TOKEN_ADDRESS":        v.GetString("ETHEREUM_TOKEN_ADDRESS"),
-		"STAKE_WALLET_ADDRESS": v.GetString("ETHEREUM_STAKE_WALLET_ADDRESS"),
+	v.SetDefault("FILECOIN_NETWORK", map[string]interface{}{
+		"RPC":                  v.GetString("FILECOIN_RPC"),
+		"CHAIN_ID":             v.GetInt64("FILECOIN_CHAIN_ID"),
+		"TOKEN_ADDRESS":        v.GetString("FILECOIN_TOKEN_ADDRESS"),
+		"STAKE_WALLET_ADDRESS": v.GetString("FILECOIN_STAKE_WALLET_ADDRESS"),
 	})
 
 	v.SetDefault("SCHEDULER", map[string]interface{}{

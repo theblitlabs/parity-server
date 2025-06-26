@@ -193,7 +193,7 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 	}
 
 	rewardCalculator := services.NewRewardCalculator()
-	rewardClient := services.NewEthereumRewardClient(sb.config)
+	rewardClient := services.NewFilecoinRewardClient(sb.config)
 
 	sb.runnerService = services.NewRunnerService(sb.runnerRepo)
 	sb.taskService = services.NewTaskService(sb.taskRepo, rewardCalculator.(*services.RewardCalculator), sb.runnerService)
@@ -284,9 +284,9 @@ func (sb *ServerBuilder) InitWallet() *ServerBuilder {
 	}
 
 	walletClient, err := walletsdk.NewClient(walletsdk.ClientConfig{
-		RPCURL:       sb.config.Ethereum.RPC,
-		ChainID:      sb.config.Ethereum.ChainID,
-		TokenAddress: common.HexToAddress(sb.config.Ethereum.TokenAddress),
+		RPCURL:       sb.config.FilecoinNetwork.RPC,
+		ChainID:      sb.config.FilecoinNetwork.ChainID,
+		TokenAddress: common.HexToAddress(sb.config.FilecoinNetwork.TokenAddress),
 		PrivateKey:   common.Bytes2Hex(crypto.FromECDSA(privateKey)),
 	})
 	if err != nil {
@@ -296,8 +296,8 @@ func (sb *ServerBuilder) InitWallet() *ServerBuilder {
 
 	stakeWallet, err := walletsdk.NewStakeWallet(
 		walletClient,
-		common.HexToAddress(sb.config.Ethereum.StakeWalletAddress),
-		common.HexToAddress(sb.config.Ethereum.TokenAddress),
+		common.HexToAddress(sb.config.FilecoinNetwork.StakeWalletAddress),
+		common.HexToAddress(sb.config.FilecoinNetwork.TokenAddress),
 	)
 	if err != nil {
 		sb.err = fmt.Errorf("failed to create stake wallet: %w", err)
