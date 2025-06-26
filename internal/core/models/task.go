@@ -23,9 +23,10 @@ const (
 )
 
 const (
-	TaskTypeDocker  TaskType = "docker"
-	TaskTypeCommand TaskType = "command"
-	TaskTypeLLM     TaskType = "llm"
+	TaskTypeDocker            TaskType = "docker"
+	TaskTypeCommand           TaskType = "command"
+	TaskTypeLLM               TaskType = "llm"
+	TaskTypeFederatedLearning TaskType = "federated_learning"
 )
 
 type DockerConfig struct {
@@ -62,6 +63,9 @@ func (c *TaskConfig) Validate(taskType TaskType) error {
 	case TaskTypeLLM:
 		// LLM tasks don't require Docker image or command validation
 		// Validation for model and prompt is done at the environment level
+	case TaskTypeFederatedLearning:
+		// FL tasks have their own validation logic
+		// No specific TaskConfig validation needed
 	default:
 		return fmt.Errorf("unsupported task type: %s", taskType)
 	}
@@ -105,6 +109,15 @@ func (t *Task) Validate() error {
 
 	if t.Type == "" {
 		return errors.New("task type is required")
+	}
+
+	// Skip config validation for federated learning tasks as they have different structure
+	if t.Type == TaskTypeFederatedLearning {
+		// FL tasks have their own config format, just check that config exists
+		if len(t.Config) == 0 {
+			return errors.New("config is required for federated learning tasks")
+		}
+		return nil
 	}
 
 	var config TaskConfig

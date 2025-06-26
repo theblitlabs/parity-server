@@ -51,8 +51,21 @@ func registerLLMRoutes(router *gin.RouterGroup, llmHandler *handlers.LLMHandler)
 	}
 }
 
-func RegisterRoutes(api *gin.RouterGroup, taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler) {
+func registerFederatedLearningRoutes(router *gin.RouterGroup, flHandler *handlers.FederatedLearningHandler) {
+	fl := router.Group("/federated-learning")
+	{
+		fl.POST("/sessions", flHandler.CreateSession)
+		fl.GET("/sessions", flHandler.ListSessions)
+		fl.GET("/sessions/:id", flHandler.GetSession)
+		fl.POST("/sessions/:id/start", flHandler.StartSession)
+		fl.POST("/model-updates", flHandler.SubmitModelUpdate)
+		fl.GET("/sessions/:id/rounds/:roundNumber", flHandler.GetRound)
+	}
+}
+
+func RegisterRoutes(api *gin.RouterGroup, taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, flHandler *handlers.FederatedLearningHandler) {
 	registerTaskRoutes(api, taskHandler)
 	registerRunnerRoutes(api, taskHandler, runnerHandler, webhookHandler)
 	registerLLMRoutes(api, llmHandler)
+	registerFederatedLearningRoutes(api, flHandler)
 }

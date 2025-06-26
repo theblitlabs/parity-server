@@ -114,31 +114,36 @@ func (s *Server) Shutdown(ctx context.Context) {
 }
 
 type ServerBuilder struct {
-	config              *config.Config
-	dbManager           *db.DBManager
-	repoFactory         *db.RepositoryFactory
-	taskRepo            *repositories.TaskRepository
-	runnerRepo          *repositories.RunnerRepository
-	promptRepo          ports.PromptRepository
-	billingRepo         ports.BillingRepository
-	taskService         *services.TaskService
-	runnerService       *services.RunnerService
-	llmService          *services.LLMService
-	heartbeatService    *services.HeartbeatService
-	webhookService      *services.WebhookService
-	storageService      services.StorageService
-	verificationService *services.VerificationService
-	stakeWallet         *walletsdk.StakeWallet
-	taskHandler         *handlers.TaskHandler
-	runnerHandler       *handlers.RunnerHandler
-	webhookHandler      *handlers.WebhookHandler
-	llmHandler          *handlers.LLMHandler
-	httpServer          *http.Server
-	stopChannel         chan struct{}
-	monitorCtx          context.Context
-	monitorCancel       context.CancelFunc
-	monitorWg           *sync.WaitGroup
-	err                 error
+	config                   *config.Config
+	dbManager                *db.DBManager
+	repoFactory              *db.RepositoryFactory
+	taskRepo                 *repositories.TaskRepository
+	runnerRepo               *repositories.RunnerRepository
+	promptRepo               ports.PromptRepository
+	billingRepo              ports.BillingRepository
+	flSessionRepo            ports.FLSessionRepository
+	flRoundRepo              ports.FLRoundRepository
+	flParticipantRepo        ports.FLParticipantRepository
+	taskService              *services.TaskService
+	runnerService            *services.RunnerService
+	llmService               *services.LLMService
+	heartbeatService         *services.HeartbeatService
+	webhookService           *services.WebhookService
+	storageService           services.StorageService
+	verificationService      *services.VerificationService
+	federatedLearningService *services.FederatedLearningService
+	stakeWallet              *walletsdk.StakeWallet
+	taskHandler              *handlers.TaskHandler
+	runnerHandler            *handlers.RunnerHandler
+	webhookHandler           *handlers.WebhookHandler
+	llmHandler               *handlers.LLMHandler
+	federatedLearningHandler *handlers.FederatedLearningHandler
+	httpServer               *http.Server
+	stopChannel              chan struct{}
+	monitorCtx               context.Context
+	monitorCancel            context.CancelFunc
+	monitorWg                *sync.WaitGroup
+	err                      error
 }
 
 func NewServerBuilder(cfg *config.Config) *ServerBuilder {
@@ -183,6 +188,9 @@ func (sb *ServerBuilder) InitRepositories() *ServerBuilder {
 	sb.runnerRepo = sb.repoFactory.RunnerRepository()
 	sb.promptRepo = repositories.NewPromptRepository(gormDB)
 	sb.billingRepo = repositories.NewBillingRepository(gormDB)
+	sb.flSessionRepo = sb.repoFactory.FLSessionRepository()
+	sb.flRoundRepo = sb.repoFactory.FLRoundRepository()
+	sb.flParticipantRepo = sb.repoFactory.FLParticipantRepository()
 
 	return sb
 }
@@ -211,6 +219,13 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 
 	sb.verificationService = services.NewVerificationService(sb.taskRepo)
 	sb.llmService = services.NewLLMService(sb.promptRepo, sb.billingRepo, sb.runnerRepo, sb.runnerService)
+	sb.federatedLearningService = services.NewFederatedLearningService(
+		sb.flSessionRepo,
+		sb.flRoundRepo,
+		sb.flParticipantRepo,
+		sb.runnerService,
+		sb.taskService,
+	)
 
 	return sb
 }
@@ -321,12 +336,14 @@ func (sb *ServerBuilder) InitRouter() *ServerBuilder {
 	sb.webhookHandler = handlers.NewWebhookHandler(sb.webhookService, sb.runnerService)
 	sb.webhookHandler.SetStopChannel(sb.stopChannel)
 	sb.llmHandler = handlers.NewLLMHandler(sb.llmService)
+	sb.federatedLearningHandler = handlers.NewFederatedLearningHandler(sb.federatedLearningService)
 
 	router := api.NewRouter(
 		sb.taskHandler,
 		sb.runnerHandler,
 		sb.webhookHandler,
 		sb.llmHandler,
+		sb.federatedLearningHandler,
 		sb.config.Server.Endpoint,
 	)
 

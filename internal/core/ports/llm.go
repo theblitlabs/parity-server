@@ -26,3 +26,8 @@ type RunnerRepository interface {
 	GetRunnerByDeviceID(ctx context.Context, deviceID string) (*models.Runner, error)
 	UpdateModelCapabilities(ctx context.Context, runnerID string, capabilities []models.ModelCapability) error
 }
+
+type RunnerService interface {
+	GetRunner(ctx context.Context, runnerID string) (*models.Runner, error)
+	ListRunnersByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error)
+}
