@@ -53,8 +53,9 @@ type ModelCapabilityInfo struct {
 }
 
 type PromptRequest struct {
-	Prompt    string `json:"prompt" binding:"required"`
-	ModelName string `json:"model_name" binding:"required"`
+	Prompt         string `json:"prompt" binding:"required"`
+	ModelName      string `json:"model_name" binding:"required"`
+	CreatorAddress string `json:"creator_address" binding:"required"`
 }
 
 type PromptResponse struct {

@@ -30,4 +30,5 @@ type RunnerRepository interface {
 type RunnerService interface {
 	GetRunner(ctx context.Context, runnerID string) (*models.Runner, error)
 	ListRunnersByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error)
+	GetAvailableRunnerForModel(ctx context.Context, modelName string) (string, error)
 }

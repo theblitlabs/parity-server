@@ -19,9 +19,10 @@ import (
 	"github.com/theblitlabs/parity-server/internal/core/config"
 	"github.com/theblitlabs/parity-server/internal/core/ports"
 	"github.com/theblitlabs/parity-server/internal/core/services"
+	"github.com/theblitlabs/parity-server/internal/database"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
-	"github.com/theblitlabs/parity-server/internal/storage/db"
 	"github.com/theblitlabs/parity-server/internal/utils"
+	"gorm.io/gorm"
 )
 
 const (
@@ -32,7 +33,7 @@ const (
 type Server struct {
 	Config           *config.Config
 	HttpServer       *http.Server
-	DBManager        *db.DBManager
+	DB               *gorm.DB
 	TaskService      *services.TaskService
 	RunnerService    *services.RunnerService
 	HeartbeatService *services.HeartbeatService
@@ -104,7 +105,9 @@ func (s *Server) Shutdown(ctx context.Context) {
 	log.Info().Dur("duration_ms", time.Since(cleanupStart)).Msg("Webhook resources cleanup completed")
 
 	dbCloseStart := time.Now()
-	if err := s.DBManager.Close(); err != nil {
+	if sqlDB, err := s.DB.DB(); err != nil {
+		log.Error().Err(err).Msg("Error getting underlying *sql.DB")
+	} else if err := sqlDB.Close(); err != nil {
 		log.Error().Err(err).Msg("Error closing database connection")
 	} else {
 		log.Info().Dur("duration_ms", time.Since(dbCloseStart)).Msg("Database connection closed successfully")
@@ -115,8 +118,7 @@ func (s *Server) Shutdown(ctx context.Context) {
 
 type ServerBuilder struct {
 	config                   *config.Config
-	dbManager                *db.DBManager
-	repoFactory              *db.RepositoryFactory
+	DB                       *gorm.DB
 	taskRepo                 *repositories.TaskRepository
 	runnerRepo               *repositories.RunnerRepository
 	promptRepo               ports.PromptRepository
@@ -165,12 +167,13 @@ func (sb *ServerBuilder) InitDatabase() *ServerBuilder {
 
 	URL := sb.config.Database.GetConnectionURL()
 
-	sb.dbManager = db.GetDBManager()
-	if err := sb.dbManager.Connect(ctx, URL); err != nil {
+	db, err := database.Connect(ctx, URL)
+	if err != nil {
 		sb.err = fmt.Errorf("failed to connect to database: %w", err)
 		return sb
 	}
 
+	sb.DB = db
 	log.Info().Msg("Successfully connected to database")
 	return sb
 }
@@ -180,17 +183,13 @@ func (sb *ServerBuilder) InitRepositories() *ServerBuilder {
 		return sb
 	}
 
-	gormDB := sb.dbManager.GetDB()
-	db.InitRepositoryFactory(gormDB)
-	sb.repoFactory = db.GetRepositoryFactory()
-
-	sb.taskRepo = sb.repoFactory.TaskRepository()
-	sb.runnerRepo = sb.repoFactory.RunnerRepository()
-	sb.promptRepo = repositories.NewPromptRepository(gormDB)
-	sb.billingRepo = repositories.NewBillingRepository(gormDB)
-	sb.flSessionRepo = sb.repoFactory.FLSessionRepository()
-	sb.flRoundRepo = sb.repoFactory.FLRoundRepository()
-	sb.flParticipantRepo = sb.repoFactory.FLParticipantRepository()
+	sb.taskRepo = repositories.NewTaskRepository(sb.DB)
+	sb.runnerRepo = repositories.NewRunnerRepository(sb.DB)
+	sb.promptRepo = repositories.NewPromptRepository(sb.DB)
+	sb.billingRepo = repositories.NewBillingRepository(sb.DB)
+	sb.flSessionRepo = repositories.NewFLSessionRepository(sb.DB)
+	sb.flRoundRepo = repositories.NewFLRoundRepository(sb.DB)
+	sb.flParticipantRepo = repositories.NewFLParticipantRepository(sb.DB)
 
 	return sb
 }
@@ -368,7 +367,7 @@ func (sb *ServerBuilder) Build() (*Server, error) {
 	return &Server{
 		Config:           sb.config,
 		HttpServer:       sb.httpServer,
-		DBManager:        sb.dbManager,
+		DB:               sb.DB,
 		TaskService:      sb.taskService,
 		RunnerService:    sb.runnerService,
 		HeartbeatService: sb.heartbeatService,

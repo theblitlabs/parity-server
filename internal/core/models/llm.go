@@ -7,15 +7,16 @@ import (
 )
 
 type PromptRequest struct {
-	ID          uuid.UUID    `json:"id" gorm:"type:uuid;primaryKey"`
-	ClientID    string       `json:"client_id" gorm:"type:varchar(255);not null"`
-	Prompt      string       `json:"prompt" gorm:"type:text;not null"`
-	ModelName   string       `json:"model_name" gorm:"type:varchar(100);not null"`
-	RunnerID    string       `json:"runner_id" gorm:"type:varchar(255)"`
-	Status      PromptStatus `json:"status" gorm:"type:varchar(50);default:'pending'"`
-	Response    string       `json:"response" gorm:"type:text"`
-	CreatedAt   time.Time    `json:"created_at" gorm:"autoCreateTime"`
-	CompletedAt *time.Time   `json:"completed_at,omitempty" gorm:"type:timestamp"`
+	ID             uuid.UUID    `json:"id" gorm:"type:uuid;primaryKey"`
+	ClientID       string       `json:"client_id" gorm:"type:varchar(255);not null"`
+	Prompt         string       `json:"prompt" gorm:"type:text;not null"`
+	ModelName      string       `json:"model_name" gorm:"type:varchar(100);not null"`
+	RunnerID       string       `json:"runner_id" gorm:"type:varchar(255)"`
+	CreatorAddress string       `json:"creator_address" gorm:"type:varchar(42);not null"`
+	Status         PromptStatus `json:"status" gorm:"type:varchar(50);default:'pending'"`
+	Response       string       `json:"response" gorm:"type:text"`
+	CreatedAt      time.Time    `json:"created_at" gorm:"autoCreateTime"`
+	CompletedAt    *time.Time   `json:"completed_at,omitempty" gorm:"type:timestamp"`
 }
 
 type PromptStatus string
@@ -50,14 +51,15 @@ type BillingMetric struct {
 	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
-func NewPromptRequest(clientID, prompt, modelName string) *PromptRequest {
+func NewPromptRequest(clientID, prompt, modelName, creatorAddress string) *PromptRequest {
 	return &PromptRequest{
-		ID:        uuid.New(),
-		ClientID:  clientID,
-		Prompt:    prompt,
-		ModelName: modelName,
-		Status:    PromptStatusPending,
-		CreatedAt: time.Now(),
+		ID:             uuid.New(),
+		ClientID:       clientID,
+		Prompt:         prompt,
+		ModelName:      modelName,
+		CreatorAddress: creatorAddress,
+		Status:         PromptStatusPending,
+		CreatedAt:      time.Now(),
 	}
 }
 

@@ -41,6 +41,16 @@ func NewFederatedLearningService(
 func (s *FederatedLearningService) CreateSession(ctx context.Context, req *requestmodels.CreateFLSessionRequest) (*models.FederatedLearningSession, error) {
 	log := log.With().Str("component", "federated_learning_service").Logger()
 
+	// Set default model config if not provided or incomplete
+	if req.Config.ModelConfig == nil {
+		req.Config.ModelConfig = make(map[string]interface{})
+	}
+
+	// Set sensible defaults for neural networks
+	if _, exists := req.Config.ModelConfig["hidden_size"]; !exists {
+		req.Config.ModelConfig["hidden_size"] = 64 // Good default for smaller datasets
+	}
+
 	config := models.FLConfig{
 		AggregationMethod: req.Config.AggregationMethod,
 		LearningRate:      req.Config.LearningRate,
@@ -367,14 +377,39 @@ func (s *FederatedLearningService) sendTrainingTask(ctx context.Context, session
 		Str("runner_id", runnerID).
 		Logger()
 
-	config := map[string]interface{}{
-		"session_id":    session.ID.String(),
-		"round_id":      roundID.String(),
-		"model_type":    session.ModelType,
-		"config":        session.Config,
-		"global_model":  session.GlobalModel,
-		"training_data": session.TrainingData,
+	// Set default values for missing fields
+	dataFormat := session.TrainingData.DataFormat
+	if dataFormat == "" {
+		dataFormat = "csv"
 	}
+
+	// Validate required fields
+	if session.TrainingData.DatasetCID == "" {
+		log.Error().Msg("Dataset CID is missing from session training data")
+		return fmt.Errorf("dataset CID is required but missing from session")
+	}
+
+	config := map[string]interface{}{
+		"session_id":   session.ID.String(),
+		"round_id":     roundID.String(),
+		"model_type":   session.ModelType,
+		"dataset_cid":  session.TrainingData.DatasetCID,
+		"data_format":  dataFormat,
+		"model_config": session.Config.ModelConfig,
+		"train_config": map[string]interface{}{
+			"epochs":        session.Config.LocalEpochs,
+			"batch_size":    session.Config.BatchSize,
+			"learning_rate": session.Config.LearningRate,
+		},
+		"output_format": "json",
+		"global_model":  session.GlobalModel,
+	}
+
+	log.Info().
+		Str("dataset_cid", session.TrainingData.DatasetCID).
+		Str("data_format", dataFormat).
+		Str("model_type", session.ModelType).
+		Msg("Creating FL training task with configuration")
 
 	configData, err := json.Marshal(config)
 	if err != nil {
@@ -573,7 +608,7 @@ func (s *FederatedLearningService) AggregateRound(ctx context.Context, sessionID
 		return fmt.Errorf("failed to get participants: %w", err)
 	}
 
-	aggregatedModel, aggregatedGradients, aggregatedWeights, globalMetrics, err := s.performAggregation(ctx, participants)
+	aggregatedModel, aggregatedGradients, aggregatedWeights, globalMetrics, err := s.performAggregation(participants)
 	if err != nil {
 		return fmt.Errorf("failed to perform aggregation: %w", err)
 	}
@@ -626,7 +661,7 @@ func (s *FederatedLearningService) AggregateRound(ctx context.Context, sessionID
 	return s.CompleteSession(ctx, sessionID)
 }
 
-func (s *FederatedLearningService) performAggregation(ctx context.Context, participants []*models.FLRoundParticipant) (map[string][]float64, map[string][]float64, map[string][]float64, *models.GlobalMetrics, error) {
+func (s *FederatedLearningService) performAggregation(participants []*models.FLRoundParticipant) (map[string][]float64, map[string][]float64, map[string][]float64, *models.GlobalMetrics, error) {
 	if len(participants) == 0 {
 		return nil, nil, nil, nil, fmt.Errorf("no participants to aggregate")
 	}
@@ -675,6 +710,7 @@ func (s *FederatedLearningService) performAggregation(ctx context.Context, parti
 
 				for i, weight := range weights {
 					if i < len(aggregatedWeights[layerName]) {
+
 						aggregatedWeights[layerName][i] += weight * weight
 					}
 				}

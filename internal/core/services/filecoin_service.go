@@ -57,7 +57,7 @@ func (f *FilecoinService) UploadDockerImage(ctx context.Context, imageData []byt
 	}
 
 	if f.storageDeal {
-		if err := f.createStorageDeal(ctx, cid); err != nil {
+		if err := f.createStorageDeal(cid); err != nil {
 			log.Warn().Err(err).
 				Str("cid", cid).
 				Msg("Failed to create storage deal, image stored on IPFS only")
@@ -99,7 +99,7 @@ func (f *FilecoinService) GetImageURL(cid string) string {
 	return fmt.Sprintf("%s/ipfs/%s", f.gatewayURL, cid)
 }
 
-func (f *FilecoinService) createStorageDeal(ctx context.Context, cid string) error {
+func (f *FilecoinService) createStorageDeal(cid string) error {
 	log := gologger.Get()
 
 	log.Info().

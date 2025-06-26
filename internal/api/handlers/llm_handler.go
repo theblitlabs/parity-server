@@ -39,7 +39,7 @@ func (h *LLMHandler) SubmitPrompt(c *gin.Context) {
 		return
 	}
 
-	promptReq, err := h.llmService.SubmitPrompt(c.Request.Context(), clientID, req.Prompt, req.ModelName)
+	promptReq, err := h.llmService.CreatePrompt(c.Request.Context(), clientID, req.Prompt, req.ModelName, req.CreatorAddress)
 	if err != nil {
 		log.Error().Err(err).Str("client_id", clientID).Str("model_name", req.ModelName).Msg("Failed to submit prompt")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -57,6 +57,7 @@ func (h *LLMHandler) SubmitPrompt(c *gin.Context) {
 		Str("prompt_id", promptReq.ID.String()).
 		Str("client_id", clientID).
 		Str("model_name", req.ModelName).
+		Str("creator_address", req.CreatorAddress).
 		Msg("Prompt submitted successfully")
 
 	c.JSON(http.StatusAccepted, response)
