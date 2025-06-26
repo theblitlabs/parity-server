@@ -96,7 +96,8 @@ type ModelUpdate struct {
 type AggregationResult struct {
 	Method           string               `json:"method"`
 	AggregatedModel  map[string][]float64 `json:"aggregated_model"`
-	Weights          map[string]float64   `json:"weights"`
+	Gradients        map[string][]float64 `json:"gradients"`
+	Weights          map[string][]float64 `json:"weights"`
 	GlobalMetrics    GlobalMetrics        `json:"global_metrics"`
 	RoundSummary     string               `json:"round_summary"`
 	ParticipantCount int                  `json:"participant_count"`
