@@ -223,11 +223,11 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 				"PROMPT": promptReq.Prompt,
 			},
 		},
-		CreatorAddress:  "0x0000000000000000000000000000000000000000", // Default for LLM tasks
-		CreatorDeviceID: "server",                                     // Mark as coming from server
+		CreatorAddress:  promptReq.CreatorAddress,
+		CreatorDeviceID: "server",
 		RunnerID:        runnerID,
-		Reward:          0.0,                                                                  // Default reward for LLM tasks
-		Nonce:           hex.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano()))), // Hex-encoded nonce
+		Reward:          0.0,
+		Nonce:           hex.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano()))),
 		Status:          models.TaskStatusPending,
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
@@ -351,4 +351,21 @@ func (s *RunnerService) StopTaskMonitor() error {
 		close(s.taskMonitorCh)
 	}
 	return nil
+}
+
+func (s *RunnerService) GetAvailableRunnerForModel(ctx context.Context, modelName string) (string, error) {
+	runners, err := s.repo.GetOnlineRunners(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get online runners: %w", err)
+	}
+
+	for _, runner := range runners {
+		for _, capability := range runner.ModelCapabilities {
+			if capability.ModelName == modelName && capability.IsLoaded {
+				return runner.DeviceID, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no available runner found for model %s", modelName)
 }

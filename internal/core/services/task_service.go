@@ -33,6 +33,7 @@ type TaskRepository interface {
 	GetAll(ctx context.Context) ([]models.Task, error)
 	SaveTaskResult(ctx context.Context, result *models.TaskResult) error
 	GetTaskResult(ctx context.Context, taskID uuid.UUID) (*models.TaskResult, error)
+	GetTasksByRunner(ctx context.Context, runnerID string, limit int) ([]*models.Task, error)
 }
 
 type TaskService struct {
@@ -838,4 +839,23 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 	}
 
 	return nil
+}
+
+// GetTasksByRunner returns tasks assigned to a specific runner (limited to recent tasks)
+func (s *TaskService) GetTasksByRunner(ctx context.Context, runnerID string, limit int) ([]*models.Task, error) {
+	log := gologger.WithComponent("task_service")
+
+	tasks, err := s.repo.GetTasksByRunner(ctx, runnerID, limit)
+	if err != nil {
+		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to get tasks by runner")
+		return nil, fmt.Errorf("failed to get tasks by runner: %w", err)
+	}
+
+	log.Debug().
+		Str("runner_id", runnerID).
+		Int("task_count", len(tasks)).
+		Int("limit", limit).
+		Msg("Retrieved tasks by runner")
+
+	return tasks, nil
 }

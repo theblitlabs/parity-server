@@ -3,6 +3,7 @@ package ports
 import (
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/core/types"
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 )
@@ -25,5 +26,5 @@ type RewardClient interface {
 
 type StakeWallet interface {
 	GetStakeInfo(deviceID string) (walletsdk.StakeInfo, error)
-	TransferPayment(creator string, runner string, amount *big.Int) error
+	TransferPayment(creator string, runner string, amount *big.Int) (*types.Transaction, error)
 }

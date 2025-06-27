@@ -19,7 +19,7 @@ type Router struct {
 	endpoint string
 }
 
-func NewRouter(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, federatedLearningHandler *handlers.FederatedLearningHandler, endpoint string) *Router {
+func NewRouter(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, federatedLearningHandler *handlers.FederatedLearningHandler, reputationHandler *handlers.ReputationHandler, endpoint string) *Router {
 	engine := gin.New()
 
 	engine.Use(gin.Recovery())
@@ -30,14 +30,14 @@ func NewRouter(taskHandler *handlers.TaskHandler, runnerHandler *handlers.Runner
 		endpoint: endpoint,
 	}
 
-	r.registerRoutes(taskHandler, runnerHandler, webhookHandler, llmHandler, federatedLearningHandler)
+	r.registerRoutes(taskHandler, runnerHandler, webhookHandler, llmHandler, federatedLearningHandler, reputationHandler)
 	return r
 }
 
-func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, federatedLearningHandler *handlers.FederatedLearningHandler) {
+func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, federatedLearningHandler *handlers.FederatedLearningHandler, reputationHandler *handlers.ReputationHandler) {
 	api := r.engine.Group(r.endpoint)
 	v1Group := api.Group("/v1")
-	v1.RegisterRoutes(v1Group, taskHandler, runnerHandler, webhookHandler, llmHandler, federatedLearningHandler)
+	v1.RegisterRoutes(v1Group, taskHandler, runnerHandler, webhookHandler, llmHandler, federatedLearningHandler, reputationHandler)
 }
 
 func (r *Router) Engine() *gin.Engine {

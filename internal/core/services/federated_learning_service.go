@@ -20,6 +20,7 @@ type FederatedLearningService struct {
 	flParticipantRepo ports.FLParticipantRepository
 	runnerService     ports.RunnerService
 	taskService       ports.TaskService
+	flRewardService   *FLRewardService
 }
 
 func NewFederatedLearningService(
@@ -38,8 +39,17 @@ func NewFederatedLearningService(
 	}
 }
 
+func (s *FederatedLearningService) SetFLRewardService(flRewardService *FLRewardService) {
+	s.flRewardService = flRewardService
+}
+
 func (s *FederatedLearningService) CreateSession(ctx context.Context, req *requestmodels.CreateFLSessionRequest) (*models.FederatedLearningSession, error) {
 	log := log.With().Str("component", "federated_learning_service").Logger()
+
+	// Validate required model config
+	if len(req.Config.ModelConfig) == 0 {
+		return nil, fmt.Errorf("model configuration is required - please provide model parameters")
+	}
 
 	config := models.FLConfig{
 		AggregationMethod: req.Config.AggregationMethod,
@@ -144,21 +154,8 @@ func (s *FederatedLearningService) autoSelectRunners(ctx context.Context, sessio
 			Msg("Available runner")
 	}
 
-	// If we don't have enough online runners but we have minimum participants set to 1,
-	// try to use any available runners instead of failing immediately
+	// Check if we have enough online runners
 	if len(onlineRunners) < session.MinParticipants {
-		if session.MinParticipants == 1 && len(onlineRunners) == 0 {
-			// For single participant sessions, create a mock participant to allow testing
-			log.Warn().Msg("No online runners found for single-participant session, using mock participant")
-			mockRunnerID := "mock-runner-" + sessionID.String()[:8]
-			if err := s.flSessionRepo.AddParticipant(ctx, sessionID, mockRunnerID); err != nil {
-				log.Error().Err(err).Str("runner_id", mockRunnerID).Msg("Failed to add mock participant")
-				return fmt.Errorf("failed to add mock participant: %w", err)
-			}
-			log.Info().Str("runner_id", mockRunnerID).Msg("Added mock participant for testing")
-			return nil
-		}
-
 		log.Error().
 			Int("required", session.MinParticipants).
 			Int("available", len(onlineRunners)).
@@ -367,14 +364,84 @@ func (s *FederatedLearningService) sendTrainingTask(ctx context.Context, session
 		Str("runner_id", runnerID).
 		Logger()
 
-	config := map[string]interface{}{
-		"session_id":    session.ID.String(),
-		"round_id":      roundID.String(),
-		"model_type":    session.ModelType,
-		"config":        session.Config,
-		"global_model":  session.GlobalModel,
-		"training_data": session.TrainingData,
+	// Set default values for missing fields
+	dataFormat := session.TrainingData.DataFormat
+	if dataFormat == "" {
+		dataFormat = "csv"
 	}
+
+	// Validate required fields
+	if session.TrainingData.DatasetCID == "" {
+		log.Error().Msg("Dataset CID is missing from session training data")
+		return fmt.Errorf("dataset CID is required but missing from session")
+	}
+
+	// Get all participants to determine partition configuration
+	participants, err := s.flSessionRepo.GetParticipants(ctx, session.ID)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get participants, using default partitioning")
+		participants = []string{runnerID} // Fallback to single participant
+	}
+
+	// Find the index of current runner in participants list
+	runnerIndex := 0
+	for i, participantID := range participants {
+		if participantID == runnerID {
+			runnerIndex = i
+			break
+		}
+	}
+
+	// Create partition configuration from session settings - all values must be provided
+	partitionConfig := map[string]interface{}{
+		"strategy":    session.TrainingData.SplitStrategy,
+		"total_parts": len(participants),
+		"part_index":  runnerIndex,
+	}
+
+	// Extract required partition settings from session metadata
+	if session.TrainingData.Metadata != nil {
+		if alpha, ok := session.TrainingData.Metadata["alpha"].(float64); ok {
+			partitionConfig["alpha"] = alpha
+		}
+		if minSamples, ok := session.TrainingData.Metadata["min_samples"].(float64); ok {
+			partitionConfig["min_samples"] = int(minSamples)
+		}
+		if overlapRatio, ok := session.TrainingData.Metadata["overlap_ratio"].(float64); ok {
+			partitionConfig["overlap_ratio"] = overlapRatio
+		}
+	}
+
+	// Set default split strategy if not specified
+	if partitionConfig["strategy"] == "" || partitionConfig["strategy"] == nil {
+		partitionConfig["strategy"] = "random"
+	}
+
+	config := map[string]interface{}{
+		"session_id":       session.ID.String(),
+		"round_id":         roundID.String(),
+		"model_type":       session.ModelType,
+		"dataset_cid":      session.TrainingData.DatasetCID,
+		"data_format":      dataFormat,
+		"model_config":     session.Config.ModelConfig,
+		"partition_config": partitionConfig,
+		"train_config": map[string]interface{}{
+			"epochs":        session.Config.LocalEpochs,
+			"batch_size":    session.Config.BatchSize,
+			"learning_rate": session.Config.LearningRate,
+		},
+		"output_format": "json",
+		"global_model":  session.GlobalModel,
+	}
+
+	log.Info().
+		Str("dataset_cid", session.TrainingData.DatasetCID).
+		Str("data_format", dataFormat).
+		Str("model_type", session.ModelType).
+		Str("split_strategy", fmt.Sprintf("%v", partitionConfig["strategy"])).
+		Int("total_participants", len(participants)).
+		Int("runner_index", runnerIndex).
+		Msg("Creating FL training task with partitioned data configuration")
 
 	configData, err := json.Marshal(config)
 	if err != nil {
@@ -384,15 +451,15 @@ func (s *FederatedLearningService) sendTrainingTask(ctx context.Context, session
 
 	task := &models.Task{
 		ID:              uuid.New(),
-		Title:           fmt.Sprintf("FL Training - Session %s Round %d", session.Name, session.CurrentRound),
-		Description:     fmt.Sprintf("Federated learning training task for session %s", session.Name),
+		Title:           fmt.Sprintf("FL Training - Session %s Round %d (Partition %d/%d)", session.Name, session.CurrentRound, runnerIndex+1, len(participants)),
+		Description:     fmt.Sprintf("Federated learning training task for session %s with %s data partitioning", session.Name, partitionConfig["strategy"]),
 		Type:            models.TaskTypeFederatedLearning,
 		Status:          models.TaskStatusPending,
 		Config:          configData,
 		CreatorAddress:  session.CreatorAddress,
 		CreatorDeviceID: "fl-coordinator",
 		RunnerID:        runnerID,
-		Nonce:           fmt.Sprintf("fl-%s-%d", session.ID.String(), session.CurrentRound),
+		Nonce:           fmt.Sprintf("fl-%s-%d-%d", session.ID.String(), session.CurrentRound, runnerIndex),
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
 	}
@@ -573,13 +640,19 @@ func (s *FederatedLearningService) AggregateRound(ctx context.Context, sessionID
 		return fmt.Errorf("failed to get participants: %w", err)
 	}
 
-	aggregatedModel, aggregatedGradients, aggregatedWeights, globalMetrics, err := s.performAggregation(ctx, participants)
+	aggregatedModel, aggregatedGradients, aggregatedWeights, globalMetrics, err := s.performAggregation(participants)
 	if err != nil {
 		return fmt.Errorf("failed to perform aggregation: %w", err)
 	}
 
+	// Get session to retrieve aggregation method
+	sessionForAggr, err := s.flSessionRepo.GetByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session for aggregation method: %w", err)
+	}
+
 	aggregation := &models.AggregationResult{
-		Method:           "federated_averaging",
+		Method:           sessionForAggr.Config.AggregationMethod,
 		AggregatedModel:  aggregatedModel,
 		Gradients:        aggregatedGradients,
 		Weights:          aggregatedWeights,
@@ -619,6 +692,18 @@ func (s *FederatedLearningService) AggregateRound(ctx context.Context, sessionID
 		Int("participants", len(participants)).
 		Msg("Round aggregation completed")
 
+	// Distribute rewards for completed round
+	if s.flRewardService != nil {
+		go func() {
+			if err := s.flRewardService.DistributeRoundRewards(context.Background(), sessionID, roundID); err != nil {
+				log.Error().Err(err).
+					Str("session_id", sessionID.String()).
+					Str("round_id", roundID.String()).
+					Msg("Failed to distribute FL round rewards")
+			}
+		}()
+	}
+
 	if session.CurrentRound < session.TotalRounds {
 		return s.StartNextRound(ctx, sessionID)
 	}
@@ -626,7 +711,7 @@ func (s *FederatedLearningService) AggregateRound(ctx context.Context, sessionID
 	return s.CompleteSession(ctx, sessionID)
 }
 
-func (s *FederatedLearningService) performAggregation(ctx context.Context, participants []*models.FLRoundParticipant) (map[string][]float64, map[string][]float64, map[string][]float64, *models.GlobalMetrics, error) {
+func (s *FederatedLearningService) performAggregation(participants []*models.FLRoundParticipant) (map[string][]float64, map[string][]float64, map[string][]float64, *models.GlobalMetrics, error) {
 	if len(participants) == 0 {
 		return nil, nil, nil, nil, fmt.Errorf("no participants to aggregate")
 	}
@@ -673,9 +758,9 @@ func (s *FederatedLearningService) performAggregation(ctx context.Context, parti
 					aggregatedWeights[layerName] = make([]float64, len(weights))
 				}
 
-				for i, weight := range weights {
+				for i, modelWeight := range weights {
 					if i < len(aggregatedWeights[layerName]) {
-						aggregatedWeights[layerName][i] += weight * weight
+						aggregatedWeights[layerName][i] += modelWeight * weight
 					}
 				}
 			}
@@ -779,6 +864,17 @@ func (s *FederatedLearningService) CompleteSession(ctx context.Context, sessionI
 
 	if err := s.flSessionRepo.Update(ctx, session); err != nil {
 		return fmt.Errorf("failed to update session: %w", err)
+	}
+
+	// Distribute completion bonus rewards
+	if s.flRewardService != nil {
+		go func() {
+			if err := s.flRewardService.DistributeSessionCompletionBonus(context.Background(), sessionID); err != nil {
+				log.Error().Err(err).
+					Str("session_id", sessionID.String()).
+					Msg("Failed to distribute FL session completion bonus")
+			}
+		}()
 	}
 
 	log.Info().Msg("FL session completed")

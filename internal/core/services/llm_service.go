@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/core/ports"
@@ -32,7 +33,7 @@ func NewLLMService(
 	}
 }
 
-func (s *LLMService) SubmitPrompt(ctx context.Context, clientID, prompt, modelName string) (*models.PromptRequest, error) {
+func (s *LLMService) SubmitPrompt(ctx context.Context, clientID, prompt, modelName, creatorAddress string) (*models.PromptRequest, error) {
 	log := gologger.WithComponent("llm_service")
 
 	runner, err := s.findAvailableRunner(ctx, modelName)
@@ -41,7 +42,7 @@ func (s *LLMService) SubmitPrompt(ctx context.Context, clientID, prompt, modelNa
 		return nil, fmt.Errorf("no available runner found for model %s: %w", modelName, err)
 	}
 
-	promptReq := models.NewPromptRequest(clientID, prompt, modelName)
+	promptReq := models.NewPromptRequest(clientID, prompt, modelName, creatorAddress)
 	promptReq.RunnerID = runner.DeviceID
 	promptReq.Status = models.PromptStatusProcessing
 
@@ -207,4 +208,51 @@ func matchesBaseModel(capabilityModel, requestedModel string) bool {
 	}
 
 	return false
+}
+
+func (s *LLMService) CreatePrompt(ctx context.Context, clientID, prompt, modelName, creatorAddress string) (*models.PromptRequest, error) {
+	if prompt == "" {
+		return nil, fmt.Errorf("prompt cannot be empty")
+	}
+
+	if modelName == "" {
+		return nil, fmt.Errorf("model name cannot be empty")
+	}
+
+	if creatorAddress == "" {
+		return nil, fmt.Errorf("creator address cannot be empty")
+	}
+
+	promptReq := models.NewPromptRequest(clientID, prompt, modelName, creatorAddress)
+
+	// Get available runner for model
+	runnerID, err := s.runnerService.GetAvailableRunnerForModel(ctx, modelName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get available runner: %w", err)
+	}
+	promptReq.RunnerID = runnerID
+
+	// Create prompt in DB
+	if err := s.promptRepo.Create(ctx, promptReq); err != nil {
+		return nil, fmt.Errorf("failed to create prompt request: %w", err)
+	}
+
+	// Forward prompt to runner asynchronously
+	go func() {
+		// Use background context to avoid cancellation when HTTP request ends
+		bgCtx := context.Background()
+		if err := s.runnerService.ForwardPromptToRunner(bgCtx, runnerID, promptReq); err != nil {
+			// Keep status as processing so client keeps polling
+			// The task will remain in processing state until runner picks it up
+			log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to forward prompt to runner - task remains in processing state")
+		}
+	}()
+
+	log.Info().
+		Str("prompt_id", promptReq.ID.String()).
+		Str("model_name", modelName).
+		Str("runner_id", runnerID).
+		Msg("Prompt submitted successfully")
+
+	return promptReq, nil
 }
