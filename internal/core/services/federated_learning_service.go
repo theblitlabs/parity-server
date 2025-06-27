@@ -20,6 +20,7 @@ type FederatedLearningService struct {
 	flParticipantRepo ports.FLParticipantRepository
 	runnerService     ports.RunnerService
 	taskService       ports.TaskService
+	flRewardService   *FLRewardService
 }
 
 func NewFederatedLearningService(
@@ -38,11 +39,15 @@ func NewFederatedLearningService(
 	}
 }
 
+func (s *FederatedLearningService) SetFLRewardService(flRewardService *FLRewardService) {
+	s.flRewardService = flRewardService
+}
+
 func (s *FederatedLearningService) CreateSession(ctx context.Context, req *requestmodels.CreateFLSessionRequest) (*models.FederatedLearningSession, error) {
 	log := log.With().Str("component", "federated_learning_service").Logger()
 
 	// Validate required model config
-	if req.Config.ModelConfig == nil || len(req.Config.ModelConfig) == 0 {
+	if len(req.Config.ModelConfig) == 0 {
 		return nil, fmt.Errorf("model configuration is required - please provide model parameters")
 	}
 
@@ -149,21 +154,8 @@ func (s *FederatedLearningService) autoSelectRunners(ctx context.Context, sessio
 			Msg("Available runner")
 	}
 
-	// If we don't have enough online runners but we have minimum participants set to 1,
-	// try to use any available runners instead of failing immediately
+	// Check if we have enough online runners
 	if len(onlineRunners) < session.MinParticipants {
-		if session.MinParticipants == 1 && len(onlineRunners) == 0 {
-			// For single participant sessions, create a mock participant to allow testing
-			log.Warn().Msg("No online runners found for single-participant session, using mock participant")
-			mockRunnerID := "mock-runner-" + sessionID.String()[:8]
-			if err := s.flSessionRepo.AddParticipant(ctx, sessionID, mockRunnerID); err != nil {
-				log.Error().Err(err).Str("runner_id", mockRunnerID).Msg("Failed to add mock participant")
-				return fmt.Errorf("failed to add mock participant: %w", err)
-			}
-			log.Info().Str("runner_id", mockRunnerID).Msg("Added mock participant for testing")
-			return nil
-		}
-
 		log.Error().
 			Int("required", session.MinParticipants).
 			Int("available", len(onlineRunners)).
@@ -700,6 +692,18 @@ func (s *FederatedLearningService) AggregateRound(ctx context.Context, sessionID
 		Int("participants", len(participants)).
 		Msg("Round aggregation completed")
 
+	// Distribute rewards for completed round
+	if s.flRewardService != nil {
+		go func() {
+			if err := s.flRewardService.DistributeRoundRewards(context.Background(), sessionID, roundID); err != nil {
+				log.Error().Err(err).
+					Str("session_id", sessionID.String()).
+					Str("round_id", roundID.String()).
+					Msg("Failed to distribute FL round rewards")
+			}
+		}()
+	}
+
 	if session.CurrentRound < session.TotalRounds {
 		return s.StartNextRound(ctx, sessionID)
 	}
@@ -860,6 +864,17 @@ func (s *FederatedLearningService) CompleteSession(ctx context.Context, sessionI
 
 	if err := s.flSessionRepo.Update(ctx, session); err != nil {
 		return fmt.Errorf("failed to update session: %w", err)
+	}
+
+	// Distribute completion bonus rewards
+	if s.flRewardService != nil {
+		go func() {
+			if err := s.flRewardService.DistributeSessionCompletionBonus(context.Background(), sessionID); err != nil {
+				log.Error().Err(err).
+					Str("session_id", sessionID.String()).
+					Msg("Failed to distribute FL session completion bonus")
+			}
+		}()
 	}
 
 	log.Info().Msg("FL session completed")

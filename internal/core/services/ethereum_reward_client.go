@@ -10,13 +10,11 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/rs/zerolog"
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/keystore"
 	"github.com/theblitlabs/parity-server/internal/core/config"
 	"github.com/theblitlabs/parity-server/internal/core/models"
-	"github.com/theblitlabs/parity-server/internal/core/ports"
 )
 
 const (
@@ -25,8 +23,7 @@ const (
 )
 
 type FilecoinRewardClient struct {
-	cfg         *config.Config
-	stakeWallet ports.StakeWallet
+	cfg *config.Config
 }
 
 func NewFilecoinRewardClient(cfg *config.Config) *FilecoinRewardClient {
@@ -35,9 +32,7 @@ func NewFilecoinRewardClient(cfg *config.Config) *FilecoinRewardClient {
 	}
 }
 
-func (c *FilecoinRewardClient) SetStakeWallet(sw ports.StakeWallet) {
-	c.stakeWallet = sw
-}
+// SetStakeWallet is deprecated - reward distribution now uses real blockchain transactions only
 
 func (c *FilecoinRewardClient) DistributeRewards(result *models.TaskResult) error {
 	log := gologger.WithComponent("rewards").With().
@@ -52,9 +47,7 @@ func (c *FilecoinRewardClient) DistributeRewards(result *models.TaskResult) erro
 		return fmt.Errorf("invalid reward amount: must be greater than zero")
 	}
 
-	if c.stakeWallet != nil {
-		return c.distributeWithMockWallet(log, result)
-	}
+	// Always use real wallet implementation - no more mock transfers
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -173,32 +166,4 @@ func (c *FilecoinRewardClient) DistributeRewards(result *models.TaskResult) erro
 	return nil
 }
 
-// distributeWithMockWallet handles reward distribution using a mock wallet for testing
-func (c *FilecoinRewardClient) distributeWithMockWallet(log zerolog.Logger, result *models.TaskResult) error {
-	stakeInfo, err := c.stakeWallet.GetStakeInfo(result.DeviceID)
-	if err != nil {
-		log.Error().Err(err).Msg("Stake info check failed")
-		return nil
-	}
-
-	if !stakeInfo.Exists {
-		log.Debug().Msg("No stake found")
-		return nil
-	}
-
-	rewardWei := new(big.Float).Mul(
-		new(big.Float).SetFloat64(result.Reward),
-		new(big.Float).SetFloat64(1e18),
-	)
-	rewardAmount, _ := rewardWei.Int(nil)
-
-	if err := c.stakeWallet.TransferPayment(result.CreatorAddress, result.DeviceID, rewardAmount); err != nil {
-		log.Error().Err(err).
-			Str("reward", rewardAmount.String()).
-			Msg("Transfer failed")
-		return fmt.Errorf("reward transfer failed: %w", err)
-	}
-
-	log.Info().Str("reward", rewardAmount.String()).Msg("Transfer completed")
-	return nil
-}
+// Removed mock wallet distribution function - all transfers are now real blockchain transactions

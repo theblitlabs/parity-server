@@ -328,7 +328,7 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 
 	if !info.Exists {
 		log.Error().Str("device_id", task.CreatorDeviceID).Msg("Device is not registered in staking contract")
-		return fmt.Errorf("device %s is not registered in the staking contract - please stake PRTY tokens first", task.CreatorDeviceID)
+		return fmt.Errorf("device %s is not registered in the staking contract - please stake USDFC tokens first", task.CreatorDeviceID)
 	}
 
 	minRequiredStake := big.NewInt(10)
@@ -338,7 +338,7 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 			Str("current_balance", info.Amount.String()).
 			Str("required_balance", minRequiredStake.String()).
 			Msg("Insufficient stake balance")
-		return fmt.Errorf("insufficient stake balance for device %s - current balance: %v PRTY, minimum required: %v PRTY",
+		return fmt.Errorf("insufficient stake balance for device %s - current balance: %v USDFC, minimum required: %v USDFC",
 			task.CreatorDeviceID,
 			info.Amount.String(),
 			minRequiredStake.String())

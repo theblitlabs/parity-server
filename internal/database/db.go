@@ -44,6 +44,8 @@ func Connect(ctx context.Context, dbURL string) (*gorm.DB, error) {
 		&models.Task{},
 		&models.TaskResult{},
 		&models.Runner{},
+		&models.RunnerReputation{},
+		&models.ReputationEvent{},
 		&models.PromptRequest{},
 		&models.ModelCapability{},
 		&models.BillingMetric{},
