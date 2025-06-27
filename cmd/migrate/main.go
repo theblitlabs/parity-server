@@ -2,19 +2,21 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func main() {
+	log := gologger.WithComponent("migrate")
+
 	// Load environment variables
 	if err := godotenv.Load(); err != nil {
-		log.Printf("Warning: Error loading .env file: %v", err)
+		log.Warn().Err(err).Msg("Error loading .env file")
 	}
 
 	// Build database URL from environment variables
@@ -26,19 +28,17 @@ func main() {
 		os.Getenv("DATABASE_DATABASE_NAME"),
 	)
 
-	log.Printf("Connecting to database: %s", dbURL)
+	log.Info().Str("db_url", dbURL).Msg("Connecting to database")
 
 	// Connect to database
 	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatal().Err(err).Msg("Failed to connect to database")
 	}
 
-	log.Println("Connected to database successfully")
+	log.Info().Msg("Connected to database successfully")
 
-	// Run migrations
-	log.Println("Starting database migrations...")
-
+	// Run migrations silently
 	modelsList := []interface{}{
 		&models.Task{},
 		&models.TaskResult{},
@@ -49,20 +49,16 @@ func main() {
 	}
 
 	for _, model := range modelsList {
-		log.Printf("Migrating table for model: %T", model)
 		if err := db.AutoMigrate(model); err != nil {
-			log.Fatalf("Error migrating %T: %v", model, err)
+			log.Fatal().Err(err).Msgf("Error migrating %T", model)
 		}
-		log.Printf("Successfully migrated table for model: %T", model)
 	}
 
-	log.Println("All database migrations completed successfully!")
+	log.Info().Msg("All database migrations completed successfully")
 
 	// Verify tables were created
-	log.Println("Verifying tables...")
-
 	var tables []string
 	db.Raw("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").Scan(&tables)
 
-	log.Printf("Created tables: %v", tables)
+	log.Info().Strs("tables", tables).Msg("Migration verification completed")
 }

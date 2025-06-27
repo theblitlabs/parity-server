@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -71,14 +70,16 @@ func init() {
 
 	// Load config immediately to catch any errors early
 	if _, err := configManager.GetConfig(); err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log := gologger.WithComponent("main")
+		log.Fatal().Err(err).Msg("Failed to load config")
 	}
 
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", configPath, "Path to config file")
 	rootCmd.PersistentFlags().StringVar(&logMode, "log", "pretty", "Log mode: debug, pretty, info, prod, test")
 	authCmd.Flags().String("private-key", "", "Private key in hex format")
 	if err := authCmd.MarkFlagRequired("private-key"); err != nil {
-		log.Fatalf("Error marking flag required: %v", err)
+		log := gologger.WithComponent("main")
+		log.Fatal().Err(err).Msg("Error marking flag required")
 	}
 
 	rootCmd.AddCommand(serverCmd)

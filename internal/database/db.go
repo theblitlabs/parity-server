@@ -3,10 +3,9 @@ package database
 import (
 	"context"
 	"fmt"
-	"log"
-	"os"
 	"time"
 
+	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -14,9 +13,11 @@ import (
 )
 
 func Connect(ctx context.Context, dbURL string) (*gorm.DB, error) {
+	log := gologger.WithComponent("database")
+
 	// Disable detailed GORM logging
 	newLogger := logger.New(
-		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
+		nil, // Use nil to completely disable output
 		logger.Config{
 			SlowThreshold:             time.Second,   // Slow SQL threshold
 			LogLevel:                  logger.Silent, // Disable SQL logging
@@ -37,9 +38,7 @@ func Connect(ctx context.Context, dbURL string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("error opening database: %w", err)
 	}
 
-	// Run migrations with minimal logging
-	log.Println("Starting database migrations...")
-
+	// Run migrations silently
 	modelsList := []interface{}{
 		&models.Task{},
 		&models.TaskResult{},
@@ -52,21 +51,18 @@ func Connect(ctx context.Context, dbURL string) (*gorm.DB, error) {
 	}
 
 	for _, model := range modelsList {
-		log.Printf("Migrating table for model: %T", model)
 		if err := db.AutoMigrate(model); err != nil {
+			log.Error().Err(err).Msgf("error migrating %T", model)
 			return nil, fmt.Errorf("error migrating %T: %w", model, err)
 		}
-		log.Printf("Successfully migrated table for model: %T", model)
 	}
 
-	log.Println("All database migrations completed successfully")
-
-	// Verify tables exist and have correct schema
+	// Verify tables exist silently
 	for _, model := range modelsList {
 		if !db.Migrator().HasTable(model) {
+			log.Error().Msgf("table for model %T was not created", model)
 			return nil, fmt.Errorf("table for model %T was not created", model)
 		}
-		log.Printf("Verified table exists for model: %T", model)
 	}
 
 	var count int64
@@ -80,5 +76,6 @@ func Connect(ctx context.Context, dbURL string) (*gorm.DB, error) {
 		}
 	}
 
+	log.Info().Msg("Database connected successfully")
 	return db, nil
 }
