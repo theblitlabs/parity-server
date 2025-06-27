@@ -41,14 +41,9 @@ func NewFederatedLearningService(
 func (s *FederatedLearningService) CreateSession(ctx context.Context, req *requestmodels.CreateFLSessionRequest) (*models.FederatedLearningSession, error) {
 	log := log.With().Str("component", "federated_learning_service").Logger()
 
-	// Set default model config if not provided or incomplete
-	if req.Config.ModelConfig == nil {
-		req.Config.ModelConfig = make(map[string]interface{})
-	}
-
-	// Set sensible defaults for neural networks
-	if _, exists := req.Config.ModelConfig["hidden_size"]; !exists {
-		req.Config.ModelConfig["hidden_size"] = 64 // Good default for smaller datasets
+	// Validate required model config
+	if req.Config.ModelConfig == nil || len(req.Config.ModelConfig) == 0 {
+		return nil, fmt.Errorf("model configuration is required - please provide model parameters")
 	}
 
 	config := models.FLConfig{
@@ -405,17 +400,14 @@ func (s *FederatedLearningService) sendTrainingTask(ctx context.Context, session
 		}
 	}
 
-	// Create partition configuration based on session settings
+	// Create partition configuration from session settings - all values must be provided
 	partitionConfig := map[string]interface{}{
-		"strategy":      session.TrainingData.SplitStrategy,
-		"total_parts":   len(participants),
-		"part_index":    runnerIndex,
-		"alpha":         0.5, // Default Dirichlet parameter for non-IID
-		"min_samples":   50,  // Minimum samples per participant
-		"overlap_ratio": 0.0, // No overlap by default
+		"strategy":    session.TrainingData.SplitStrategy,
+		"total_parts": len(participants),
+		"part_index":  runnerIndex,
 	}
 
-	// Override with session-specific partition settings if available
+	// Extract required partition settings from session metadata
 	if session.TrainingData.Metadata != nil {
 		if alpha, ok := session.TrainingData.Metadata["alpha"].(float64); ok {
 			partitionConfig["alpha"] = alpha
@@ -661,8 +653,14 @@ func (s *FederatedLearningService) AggregateRound(ctx context.Context, sessionID
 		return fmt.Errorf("failed to perform aggregation: %w", err)
 	}
 
+	// Get session to retrieve aggregation method
+	sessionForAggr, err := s.flSessionRepo.GetByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session for aggregation method: %w", err)
+	}
+
 	aggregation := &models.AggregationResult{
-		Method:           "federated_averaging",
+		Method:           sessionForAggr.Config.AggregationMethod,
 		AggregatedModel:  aggregatedModel,
 		Gradients:        aggregatedGradients,
 		Weights:          aggregatedWeights,
