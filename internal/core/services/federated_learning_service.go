@@ -756,10 +756,9 @@ func (s *FederatedLearningService) performAggregation(participants []*models.FLR
 					aggregatedWeights[layerName] = make([]float64, len(weights))
 				}
 
-				for i, weight := range weights {
+				for i, modelWeight := range weights {
 					if i < len(aggregatedWeights[layerName]) {
-
-						aggregatedWeights[layerName][i] += weight * weight
+						aggregatedWeights[layerName][i] += modelWeight * weight
 					}
 				}
 			}
