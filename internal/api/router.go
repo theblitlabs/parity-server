@@ -35,6 +35,30 @@ func NewRouter(taskHandler *handlers.TaskHandler, runnerHandler *handlers.Runner
 }
 
 func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, federatedLearningHandler *handlers.FederatedLearningHandler, reputationHandler *handlers.ReputationHandler) {
+	// Root endpoint for server info
+	r.engine.GET("/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"service":     "parity-server",
+			"version":     "1.0.0",
+			"status":      "running",
+			"description": "Parity decentralized computing server",
+			"endpoints": gin.H{
+				"api":    r.endpoint + "/v1",
+				"health": r.endpoint + "/v1/health",
+				"llm":    r.endpoint + "/v1/llm",
+				"tasks":  r.endpoint + "/v1/tasks",
+			},
+		})
+	})
+
+	// Health check endpoint
+	r.engine.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status": "healthy",
+			"uptime": "running",
+		})
+	})
+
 	api := r.engine.Group(r.endpoint)
 	v1Group := api.Group("/v1")
 	v1.RegisterRoutes(v1Group, taskHandler, runnerHandler, webhookHandler, llmHandler, federatedLearningHandler, reputationHandler)

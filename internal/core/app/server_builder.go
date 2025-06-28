@@ -39,6 +39,7 @@ type Server struct {
 	ReputationService       *services.ReputationService
 	RunnerMonitoringService *services.RunnerMonitoringService
 	HeartbeatService        *services.HeartbeatService
+	TaskQueue               *services.TaskQueue
 	TaskHandler             *handlers.TaskHandler
 	RunnerHandler           *handlers.RunnerHandler
 	WebhookHandler          *handlers.WebhookHandler
@@ -79,6 +80,12 @@ func (s *Server) Shutdown(ctx context.Context) {
 
 	s.HeartbeatService.Stop()
 	log.Info().Msg("Stopped heartbeat monitoring service")
+
+	// Stop task queue processor
+	if s.TaskQueue != nil {
+		s.TaskQueue.Stop()
+		log.Info().Msg("Stopped task queue processor")
+	}
 
 	// Stop reputation monitoring service
 	if s.RunnerMonitoringService != nil {
@@ -144,6 +151,7 @@ type ServerBuilder struct {
 	reputationBlockchainService *services.ReputationBlockchainService
 	runnerMonitoringService     *services.RunnerMonitoringService
 	llmService                  *services.LLMService
+	taskQueue                   *services.TaskQueue
 	heartbeatService            *services.HeartbeatService
 	webhookService              *services.WebhookService
 	storageService              services.StorageService
@@ -235,7 +243,11 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 	sb.storageService = storageService
 
 	sb.verificationService = services.NewVerificationService(sb.taskRepo)
-	sb.llmService = services.NewLLMService(sb.promptRepo, sb.billingRepo, sb.runnerRepo, sb.runnerService)
+
+	// Initialize task queue before LLM service
+	sb.taskQueue = services.NewTaskQueue(sb.promptRepo, sb.runnerRepo, sb.runnerService)
+
+	sb.llmService = services.NewLLMService(sb.promptRepo, sb.billingRepo, sb.runnerRepo, sb.runnerService, sb.taskQueue)
 	sb.federatedLearningService = services.NewFederatedLearningService(
 		sb.flSessionRepo,
 		sb.flRoundRepo,
@@ -328,6 +340,10 @@ func (sb *ServerBuilder) InitTaskMonitoring() *ServerBuilder {
 
 	log.Info().Msg("Starting task monitoring services")
 	sb.taskService.StartMonitoring()
+
+	// Start task queue processor
+	go sb.taskQueue.Start(sb.monitorCtx)
+	log.Info().Msg("Task queue processor started")
 
 	// Start reputation monitoring service if enabled
 	if sb.config.Reputation.MonitoringEnabled && sb.runnerMonitoringService != nil {
@@ -447,6 +463,7 @@ func (sb *ServerBuilder) Build() (*Server, error) {
 		ReputationService:       sb.reputationService,
 		RunnerMonitoringService: sb.runnerMonitoringService,
 		HeartbeatService:        sb.heartbeatService,
+		TaskQueue:               sb.taskQueue,
 		TaskHandler:             sb.taskHandler,
 		RunnerHandler:           sb.runnerHandler,
 		WebhookHandler:          sb.webhookHandler,

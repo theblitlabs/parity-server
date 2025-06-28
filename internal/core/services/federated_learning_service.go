@@ -144,15 +144,8 @@ func (s *FederatedLearningService) autoSelectRunners(ctx context.Context, sessio
 		Int("required_participants", session.MinParticipants).
 		Msg("Found online runners")
 
-	// Log details of found runners for debugging
-	for i, runner := range onlineRunners {
-		log.Info().
-			Int("index", i).
-			Str("device_id", runner.DeviceID).
-			Str("status", string(runner.Status)).
-			Str("wallet_address", runner.WalletAddress).
-			Msg("Available runner")
-	}
+	// Log runner details at debug level only
+	log.Debug().Int("total_found", len(onlineRunners)).Msg("Found available runners")
 
 	// Check if we have enough online runners
 	if len(onlineRunners) < session.MinParticipants {
@@ -172,7 +165,7 @@ func (s *FederatedLearningService) autoSelectRunners(ctx context.Context, sessio
 			continue
 		}
 		successCount++
-		log.Info().Str("runner_id", runner.DeviceID).Msg("Auto-selected runner for FL session")
+		log.Debug().Str("runner_id", runner.DeviceID).Msg("Auto-selected runner for FL session")
 	}
 
 	if successCount == 0 {
@@ -294,7 +287,7 @@ func (s *FederatedLearningService) assignParticipants(ctx context.Context, sessi
 				log.Error().Err(err).Str("runner_id", selectedRunner.DeviceID).Msg("Failed to auto-add participant")
 			} else {
 				participants = append(participants, selectedRunner.DeviceID)
-				log.Info().Str("runner_id", selectedRunner.DeviceID).Msg("Auto-added online runner as participant")
+				log.Debug().Str("runner_id", selectedRunner.DeviceID).Msg("Auto-added online runner as participant")
 			}
 		}
 
@@ -327,7 +320,7 @@ func (s *FederatedLearningService) assignParticipants(ctx context.Context, sessi
 			continue
 		}
 
-		log.Info().
+		log.Debug().
 			Str("runner_id", participantID).
 			Msg("Created FL round participant")
 
@@ -338,7 +331,7 @@ func (s *FederatedLearningService) assignParticipants(ctx context.Context, sessi
 		}
 
 		successCount++
-		log.Info().
+		log.Debug().
 			Str("runner_id", participantID).
 			Msg("Successfully sent training task to runner")
 	}
@@ -434,9 +427,8 @@ func (s *FederatedLearningService) sendTrainingTask(ctx context.Context, session
 		"global_model":  session.GlobalModel,
 	}
 
-	log.Info().
+	log.Debug().
 		Str("dataset_cid", session.TrainingData.DatasetCID).
-		Str("data_format", dataFormat).
 		Str("model_type", session.ModelType).
 		Str("split_strategy", fmt.Sprintf("%v", partitionConfig["strategy"])).
 		Int("total_participants", len(participants)).
@@ -464,9 +456,8 @@ func (s *FederatedLearningService) sendTrainingTask(ctx context.Context, session
 		UpdatedAt:       time.Now(),
 	}
 
-	log.Info().
+	log.Debug().
 		Str("task_id", task.ID.String()).
-		Str("task_type", string(task.Type)).
 		Msg("Creating FL training task")
 
 	if err := s.taskService.CreateTask(ctx, task); err != nil {
@@ -476,7 +467,7 @@ func (s *FederatedLearningService) sendTrainingTask(ctx context.Context, session
 		return fmt.Errorf("failed to create training task: %w", err)
 	}
 
-	log.Info().
+	log.Debug().
 		Str("task_id", task.ID.String()).
 		Msg("FL training task created successfully")
 

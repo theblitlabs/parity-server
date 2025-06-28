@@ -48,8 +48,22 @@ func (h *FederatedLearningHandler) CreateSession(c *gin.Context) {
 		TotalRounds:     session.TotalRounds,
 		MinParticipants: session.MinParticipants,
 		CreatorAddress:  session.CreatorAddress,
-		CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:       session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Config: requestmodels.FLConfigRequest{
+			AggregationMethod: session.Config.AggregationMethod,
+			LearningRate:      session.Config.LearningRate,
+			BatchSize:         session.Config.BatchSize,
+			LocalEpochs:       session.Config.LocalEpochs,
+			ClientSelection:   session.Config.ClientSelection,
+			ModelConfig:       session.Config.ModelConfig,
+			PrivacyConfig: requestmodels.PrivacyConfigRequest{
+				DifferentialPrivacy: session.Config.PrivacyConfig.DifferentialPrivacy,
+				NoiseMultiplier:     session.Config.PrivacyConfig.NoiseMultiplier,
+				L2NormClip:          session.Config.PrivacyConfig.L2NormClip,
+				SecureAggregation:   session.Config.PrivacyConfig.SecureAggregation,
+			},
+		},
+		CreatedAt: session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt: session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 
 	if session.CompletedAt != nil {
@@ -88,8 +102,22 @@ func (h *FederatedLearningHandler) GetSession(c *gin.Context) {
 		TotalRounds:     session.TotalRounds,
 		MinParticipants: session.MinParticipants,
 		CreatorAddress:  session.CreatorAddress,
-		CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:       session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Config: requestmodels.FLConfigRequest{
+			AggregationMethod: session.Config.AggregationMethod,
+			LearningRate:      session.Config.LearningRate,
+			BatchSize:         session.Config.BatchSize,
+			LocalEpochs:       session.Config.LocalEpochs,
+			ClientSelection:   session.Config.ClientSelection,
+			ModelConfig:       session.Config.ModelConfig,
+			PrivacyConfig: requestmodels.PrivacyConfigRequest{
+				DifferentialPrivacy: session.Config.PrivacyConfig.DifferentialPrivacy,
+				NoiseMultiplier:     session.Config.PrivacyConfig.NoiseMultiplier,
+				L2NormClip:          session.Config.PrivacyConfig.L2NormClip,
+				SecureAggregation:   session.Config.PrivacyConfig.SecureAggregation,
+			},
+		},
+		CreatedAt: session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt: session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 
 	if session.CompletedAt != nil {
@@ -124,8 +152,22 @@ func (h *FederatedLearningHandler) ListSessions(c *gin.Context) {
 			TotalRounds:     session.TotalRounds,
 			MinParticipants: session.MinParticipants,
 			CreatorAddress:  session.CreatorAddress,
-			CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			UpdatedAt:       session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			Config: requestmodels.FLConfigRequest{
+				AggregationMethod: session.Config.AggregationMethod,
+				LearningRate:      session.Config.LearningRate,
+				BatchSize:         session.Config.BatchSize,
+				LocalEpochs:       session.Config.LocalEpochs,
+				ClientSelection:   session.Config.ClientSelection,
+				ModelConfig:       session.Config.ModelConfig,
+				PrivacyConfig: requestmodels.PrivacyConfigRequest{
+					DifferentialPrivacy: session.Config.PrivacyConfig.DifferentialPrivacy,
+					NoiseMultiplier:     session.Config.PrivacyConfig.NoiseMultiplier,
+					L2NormClip:          session.Config.PrivacyConfig.L2NormClip,
+					SecureAggregation:   session.Config.PrivacyConfig.SecureAggregation,
+				},
+			},
+			CreatedAt: session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			UpdatedAt: session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		}
 
 		if session.CompletedAt != nil {
