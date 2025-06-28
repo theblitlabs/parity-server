@@ -198,12 +198,10 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 		return fmt.Errorf("runner %s has no webhook URL", runnerID)
 	}
 
-	// Convert PromptRequest to Task
-	configData, err := json.Marshal(models.TaskConfig{
-		Env: map[string]string{
-			"MODEL":  promptReq.ModelName,
-			"PROMPT": promptReq.Prompt,
-		},
+	// Create LLM task config in the format expected by the runner executor
+	configData, err := json.Marshal(map[string]interface{}{
+		"model":  promptReq.ModelName,
+		"prompt": promptReq.Prompt,
 	})
 	if err != nil {
 		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to marshal task config")
@@ -233,6 +231,28 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 		UpdatedAt:       time.Now(),
 	}
 
+	// Store the task in the database so the runner can find it
+	if s.taskService != nil {
+		if err := s.taskService.CreateTask(ctx, task); err != nil {
+			log.Error().Err(err).Str("runner_id", runnerID).Str("task_id", task.ID.String()).Msg("Failed to store task in database")
+			return fmt.Errorf("failed to store task in database: %w", err)
+		}
+		log.Info().Str("task_id", task.ID.String()).Msg("Task stored in database successfully")
+
+		// Assign the task to the runner
+		if err := s.taskService.AssignTaskToRunner(ctx, task.ID.String(), runnerID); err != nil {
+			log.Error().Err(err).Str("runner_id", runnerID).Str("task_id", task.ID.String()).Msg("Failed to assign task to runner")
+			// Mark the task as failed if assignment fails
+			if failErr := s.taskService.FailTask(ctx, task.ID.String(), "Failed to assign task to runner"); failErr != nil {
+				log.Error().Err(failErr).Str("task_id", task.ID.String()).Msg("Failed to mark task as failed after assignment failure")
+			}
+			return fmt.Errorf("failed to assign task to runner: %w", err)
+		}
+	} else {
+		log.Warn().Msg("TaskService not available, task will not be stored in database")
+		return fmt.Errorf("taskService not available")
+	}
+
 	// Create webhook message
 	type WebhookMessage struct {
 		Type    string          `json:"type"`
@@ -242,6 +262,7 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 	taskPayload, err := json.Marshal(task)
 	if err != nil {
 		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to marshal task payload")
+		s.cleanupFailedTask(ctx, task.ID.String(), runnerID, "Failed to marshal task payload")
 		return fmt.Errorf("failed to marshal task payload: %w", err)
 	}
 
@@ -253,6 +274,7 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 	messageBytes, err := json.Marshal(message)
 	if err != nil {
 		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to marshal webhook message")
+		s.cleanupFailedTask(ctx, task.ID.String(), runnerID, "Failed to marshal webhook message")
 		return fmt.Errorf("failed to marshal webhook message: %w", err)
 	}
 
@@ -266,6 +288,7 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", runner.Webhook, bytes.NewBuffer(messageBytes))
 	if err != nil {
 		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to create HTTP request")
+		s.cleanupFailedTask(ctx, task.ID.String(), runnerID, "Failed to create HTTP request")
 		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
@@ -278,6 +301,7 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		log.Error().Err(err).Str("runner_id", runnerID).Str("webhook", runner.Webhook).Msg("Failed to send request to runner webhook")
+		s.cleanupFailedTask(ctx, task.ID.String(), runnerID, fmt.Sprintf("Webhook delivery failed: %v", err))
 		return fmt.Errorf("failed to send request to runner webhook: %w", err)
 	}
 	defer resp.Body.Close()
@@ -288,6 +312,7 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 			Str("runner_id", runnerID).
 			Str("webhook", runner.Webhook).
 			Msg("Runner webhook returned non-OK status")
+		s.cleanupFailedTask(ctx, task.ID.String(), runnerID, fmt.Sprintf("Webhook returned status %d", resp.StatusCode))
 		return fmt.Errorf("runner webhook returned status %d", resp.StatusCode)
 	}
 
@@ -298,6 +323,26 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 		Msg("Prompt forwarded to runner successfully")
 
 	return nil
+}
+
+// cleanupFailedTask cleans up resources when task delivery fails
+func (s *RunnerService) cleanupFailedTask(ctx context.Context, taskID, runnerID, reason string) {
+	log := gologger.WithComponent("runner_service")
+
+	log.Info().
+		Str("task_id", taskID).
+		Str("runner_id", runnerID).
+		Str("reason", reason).
+		Msg("Cleaning up failed task")
+
+	if s.taskService != nil {
+		// FailTask will mark task as failed and clear runner assignment
+		if err := s.taskService.FailTask(ctx, taskID, reason); err != nil {
+			log.Error().Err(err).Str("task_id", taskID).Msg("Failed to mark task as failed during cleanup")
+		} else {
+			log.Info().Str("task_id", taskID).Str("runner_id", runnerID).Msg("Task marked as failed and runner freed")
+		}
+	}
 }
 
 func (s *RunnerService) UpdateModelCapabilities(ctx context.Context, runnerID string, capabilities []models.ModelCapability) error {
@@ -360,9 +405,17 @@ func (s *RunnerService) GetAvailableRunnerForModel(ctx context.Context, modelNam
 	}
 
 	for _, runner := range runners {
+		// Check if runner is actually available (no task assigned)
+		if runner.TaskID != nil {
+			continue // Runner is busy with another task
+		}
+
+		// Check if runner has the required model capability
 		for _, capability := range runner.ModelCapabilities {
 			if capability.ModelName == modelName && capability.IsLoaded {
-				return runner.DeviceID, nil
+				if runner.Status == models.RunnerStatusOnline {
+					return runner.DeviceID, nil
+				}
 			}
 		}
 	}

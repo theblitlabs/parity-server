@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/core/ports"
@@ -17,6 +16,7 @@ type LLMService struct {
 	billingRepo   ports.BillingRepository
 	runnerRepo    ports.RunnerRepository
 	runnerService *RunnerService
+	taskQueue     *TaskQueue
 }
 
 func NewLLMService(
@@ -24,12 +24,14 @@ func NewLLMService(
 	billingRepo ports.BillingRepository,
 	runnerRepo ports.RunnerRepository,
 	runnerService *RunnerService,
+	taskQueue *TaskQueue,
 ) *LLMService {
 	return &LLMService{
 		promptRepo:    promptRepo,
 		billingRepo:   billingRepo,
 		runnerRepo:    runnerRepo,
 		runnerService: runnerService,
+		taskQueue:     taskQueue,
 	}
 }
 
@@ -56,9 +58,16 @@ func (s *LLMService) SubmitPrompt(ctx context.Context, clientID, prompt, modelNa
 		// Use background context to avoid cancellation when HTTP request ends
 		bgCtx := context.Background()
 		if err := s.runnerService.ForwardPromptToRunner(bgCtx, runner.DeviceID, promptReq); err != nil {
-			// Keep status as processing so client keeps polling
-			// The task will remain in processing state until runner picks it up
-			log.Error().Err(err).Str("runner_id", runner.DeviceID).Msg("Failed to forward prompt to runner - task remains in processing state")
+			// Mark prompt as failed when webhook delivery fails
+			log.Error().Err(err).Str("runner_id", runner.DeviceID).Msg("Failed to forward prompt to runner - marking prompt as failed")
+
+			// Update prompt status to failed
+			now := time.Now()
+			promptReq.Status = models.PromptStatusFailed
+			promptReq.CompletedAt = &now
+			if updateErr := s.promptRepo.Update(bgCtx, promptReq); updateErr != nil {
+				log.Error().Err(updateErr).Str("prompt_id", promptReq.ID.String()).Msg("Failed to update prompt status to failed")
+			}
 		}
 	}()
 
@@ -88,6 +97,21 @@ func (s *LLMService) CompletePrompt(ctx context.Context, promptID uuid.UUID, res
 	if err := s.promptRepo.Update(ctx, promptReq); err != nil {
 		log.Error().Err(err).Str("prompt_id", promptID.String()).Msg("Failed to update prompt request")
 		return fmt.Errorf("failed to update prompt request: %w", err)
+	}
+
+	// Free up the runner by clearing its TaskID
+	if promptReq.RunnerID != "" {
+		runner, err := s.runnerRepo.GetRunnerByDeviceID(ctx, promptReq.RunnerID)
+		if err != nil {
+			log.Error().Err(err).Str("runner_id", promptReq.RunnerID).Msg("Failed to get runner for cleanup")
+		} else {
+			runner.TaskID = nil
+			if _, err := s.runnerService.UpdateRunner(ctx, runner); err != nil {
+				log.Error().Err(err).Str("runner_id", promptReq.RunnerID).Msg("Failed to clear runner TaskID")
+			} else {
+				log.Info().Str("runner_id", promptReq.RunnerID).Msg("Runner freed after prompt completion")
+			}
+		}
 	}
 
 	metric := models.NewBillingMetric(
@@ -211,6 +235,8 @@ func matchesBaseModel(capabilityModel, requestedModel string) bool {
 }
 
 func (s *LLMService) CreatePrompt(ctx context.Context, clientID, prompt, modelName, creatorAddress string) (*models.PromptRequest, error) {
+	log := gologger.WithComponent("llm_service")
+
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt cannot be empty")
 	}
@@ -225,12 +251,36 @@ func (s *LLMService) CreatePrompt(ctx context.Context, clientID, prompt, modelNa
 
 	promptReq := models.NewPromptRequest(clientID, prompt, modelName, creatorAddress)
 
-	// Get available runner for model
+	// Try to get available runner for model
 	runnerID, err := s.runnerService.GetAvailableRunnerForModel(ctx, modelName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get available runner: %w", err)
+		// No runner available, queue the task instead of failing
+		log.Info().
+			Str("model_name", modelName).
+			Str("prompt_id", promptReq.ID.String()).
+			Msg("No runner available, queuing task for later processing")
+
+		promptReq.Status = models.PromptStatusQueued
+
+		// Create prompt in DB with queued status
+		if err := s.promptRepo.Create(ctx, promptReq); err != nil {
+			return nil, fmt.Errorf("failed to create prompt request: %w", err)
+		}
+
+		// Add to task queue
+		s.taskQueue.QueueTask(promptReq.ID, modelName)
+
+		log.Info().
+			Str("prompt_id", promptReq.ID.String()).
+			Str("model_name", modelName).
+			Msg("Prompt queued successfully")
+
+		return promptReq, nil
 	}
+
+	// Runner is available, process immediately
 	promptReq.RunnerID = runnerID
+	promptReq.Status = models.PromptStatusProcessing
 
 	// Create prompt in DB
 	if err := s.promptRepo.Create(ctx, promptReq); err != nil {
@@ -242,9 +292,29 @@ func (s *LLMService) CreatePrompt(ctx context.Context, clientID, prompt, modelNa
 		// Use background context to avoid cancellation when HTTP request ends
 		bgCtx := context.Background()
 		if err := s.runnerService.ForwardPromptToRunner(bgCtx, runnerID, promptReq); err != nil {
-			// Keep status as processing so client keeps polling
-			// The task will remain in processing state until runner picks it up
-			log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to forward prompt to runner - task remains in processing state")
+			// Mark prompt as failed when webhook delivery fails
+			log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to forward prompt to runner - marking prompt as failed")
+
+			// Update prompt status to failed
+			now := time.Now()
+			promptReq.Status = models.PromptStatusFailed
+			promptReq.CompletedAt = &now
+			if updateErr := s.promptRepo.Update(bgCtx, promptReq); updateErr != nil {
+				log.Error().Err(updateErr).Str("prompt_id", promptReq.ID.String()).Msg("Failed to update prompt status to failed")
+			}
+
+			// Free up the runner by clearing its TaskID
+			runner, err := s.runnerRepo.GetRunnerByDeviceID(bgCtx, runnerID)
+			if err != nil {
+				log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to get runner for cleanup after failure")
+			} else {
+				runner.TaskID = nil
+				if _, err := s.runnerService.UpdateRunner(bgCtx, runner); err != nil {
+					log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to clear runner TaskID after failure")
+				} else {
+					log.Info().Str("runner_id", runnerID).Msg("Runner freed after prompt failure")
+				}
+			}
 		}
 	}()
 

@@ -40,7 +40,7 @@ func (h *RunnerHandler) RegisterRunner(c *gin.Context) {
 	}
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(rawBody))
 
-	log.Info().Str("raw_body", string(rawBody)).Msg("Incoming request body")
+	log.Debug().Str("raw_body", string(rawBody)).Msg("Incoming request body")
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Error().Err(err).Msg("Invalid request body")
@@ -53,7 +53,7 @@ func (h *RunnerHandler) RegisterRunner(c *gin.Context) {
 		Webhook:       req.Webhook,
 	}
 
-	log.Info().Fields(map[string]interface{}{
+	log.Debug().Fields(map[string]interface{}{
 		"wallet_address": runner.WalletAddress,
 		"webhook":        runner.Webhook,
 		"status":         runner.Status,

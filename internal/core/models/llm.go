@@ -23,6 +23,7 @@ type PromptStatus string
 
 const (
 	PromptStatusPending    PromptStatus = "pending"
+	PromptStatusQueued     PromptStatus = "queued"
 	PromptStatusProcessing PromptStatus = "processing"
 	PromptStatusCompleted  PromptStatus = "completed"
 	PromptStatusFailed     PromptStatus = "failed"

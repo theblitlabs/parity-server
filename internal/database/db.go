@@ -48,6 +48,15 @@ func Connect(ctx context.Context, dbURL string) (*gorm.DB, error) {
 		&models.PromptRequest{},
 		&models.ModelCapability{},
 		&models.BillingMetric{},
+		&models.FederatedLearningSession{},
+		&models.FederatedLearningRound{},
+		&models.FLRoundParticipant{},
+		&models.ParticipantQualityMetrics{},
+		&models.SessionQualityMetrics{},
+		&models.NetworkQualityMetrics{},
+		&models.QualityAlert{},
+		&models.QualitySLA{},
+		&models.QualityReport{},
 	}
 
 	for _, model := range modelsList {

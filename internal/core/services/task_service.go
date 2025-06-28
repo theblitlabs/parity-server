@@ -316,6 +316,63 @@ func (s *TaskService) CompleteTask(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *TaskService) FailTask(ctx context.Context, id string, reason string) error {
+	log := gologger.WithComponent("task_service")
+	log.Debug().Str("task_id", id).Str("reason", reason).Msg("Attempting to fail task")
+
+	taskUUID, err := uuid.Parse(id)
+	if err != nil {
+		log.Error().Err(err).Str("task_id", id).Msg("Invalid task ID format")
+		return fmt.Errorf("invalid task ID format: %w", err)
+	}
+
+	task, err := s.repo.Get(ctx, taskUUID)
+	if err != nil {
+		log.Error().Err(err).Str("task_id", id).Msg("Failed to get task")
+		return err
+	}
+
+	// Allow failing tasks in any status except completed
+	if task.Status == models.TaskStatusCompleted {
+		log.Warn().
+			Str("task_id", id).
+			Str("status", string(task.Status)).
+			Msg("Cannot fail task that is already completed")
+		return fmt.Errorf("cannot fail task that is already completed")
+	}
+
+	task.Status = models.TaskStatusFailed
+	task.UpdatedAt = time.Now()
+	now := time.Now()
+	task.CompletedAt = &now
+
+	if err := s.repo.Update(ctx, task); err != nil {
+		log.Error().Err(err).Str("task_id", id).Msg("Failed to update task status to failed")
+		return err
+	}
+
+	// Clear runner assignment if task has a runner
+	if task.RunnerID != "" {
+		runner, err := s.runnerService.GetRunner(ctx, task.RunnerID)
+		if err == nil {
+			runner.TaskID = nil
+			if _, updateErr := s.runnerService.UpdateRunner(ctx, runner); updateErr != nil {
+				log.Error().Err(updateErr).Str("runner_id", task.RunnerID).Msg("Failed to clear runner TaskID after task failure")
+			} else {
+				log.Info().Str("runner_id", task.RunnerID).Msg("Runner TaskID cleared after task failure")
+			}
+		}
+	}
+
+	log.Info().
+		Str("task_id", id).
+		Str("reason", reason).
+		Str("status", string(task.Status)).
+		Msg("Task marked as failed")
+
+	return nil
+}
+
 func (s *TaskService) GetTaskResult(ctx context.Context, taskID string) (*models.TaskResult, error) {
 	taskUUID, err := uuid.Parse(taskID)
 	if err != nil {
@@ -744,6 +801,10 @@ func (s *TaskService) assignTaskToRunner(ctx context.Context, task *models.Task,
 
 func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.Task) error {
 	if runner.Webhook == "" {
+		return nil
+	}
+
+	if runner.Status != models.RunnerStatusOnline {
 		return nil
 	}
 
