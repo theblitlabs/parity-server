@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/core/ports"
 )
@@ -103,7 +104,7 @@ func NewRunnerMonitoringService(
 }
 
 func (s *RunnerMonitoringService) Start() error {
-	log := log.With().Str("component", "runner_monitoring_service").Logger()
+	log := gologger.WithComponent("runner_monitoring_service")
 	log.Info().Msg("Starting runner monitoring service")
 
 	// Start background workers
@@ -116,7 +117,7 @@ func (s *RunnerMonitoringService) Start() error {
 }
 
 func (s *RunnerMonitoringService) Stop() error {
-	log := log.With().Str("component", "runner_monitoring_service").Logger()
+	log := gologger.WithComponent("runner_monitoring_service")
 	log.Info().Msg("Stopping runner monitoring service")
 
 	s.cancel()
@@ -130,7 +131,7 @@ func (s *RunnerMonitoringService) Stop() error {
 func (s *RunnerMonitoringService) assignmentWorker() {
 	defer s.wg.Done()
 
-	log := log.With().Str("worker", "assignment").Logger()
+	log := gologger.WithComponent("runner_monitoring_service")
 	ticker := time.NewTicker(s.monitoringInterval)
 	defer ticker.Stop()
 
@@ -150,7 +151,7 @@ func (s *RunnerMonitoringService) assignmentWorker() {
 func (s *RunnerMonitoringService) monitoringWorker() {
 	defer s.wg.Done()
 
-	log := log.With().Str("worker", "monitoring").Logger()
+	log := gologger.WithComponent("runner_monitoring_service")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -170,7 +171,7 @@ func (s *RunnerMonitoringService) monitoringWorker() {
 func (s *RunnerMonitoringService) reportingWorker() {
 	defer s.wg.Done()
 
-	log := log.With().Str("worker", "reporting").Logger()
+	log := gologger.WithComponent("runner_monitoring_service")
 	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
 
@@ -187,7 +188,7 @@ func (s *RunnerMonitoringService) reportingWorker() {
 }
 
 func (s *RunnerMonitoringService) createRandomAssignments() error {
-	log := log.With().Str("component", "runner_monitoring_service").Logger()
+	log := gologger.WithComponent("runner_monitoring_service")
 
 	// Get all active runners
 	activeRunners, err := s.runnerService.ListRunnersByStatus(s.ctx, models.RunnerStatusOnline)
@@ -273,7 +274,7 @@ func (s *RunnerMonitoringService) createRandomAssignments() error {
 }
 
 func (s *RunnerMonitoringService) updateMonitoringMetrics() error {
-	log := log.With().Str("component", "runner_monitoring_service").Logger()
+	log := gologger.WithComponent("runner_monitoring_service")
 
 	s.assignmentsMutex.RLock()
 	activeAssignments := make([]*MonitoringAssignment, 0, len(s.assignments))
@@ -411,7 +412,7 @@ func (s *RunnerMonitoringService) detectSuspiciousPatterns(metrics *MonitoringMe
 }
 
 func (s *RunnerMonitoringService) submitPendingReports() error {
-	log := log.With().Str("component", "runner_monitoring_service").Logger()
+	log := gologger.WithComponent("runner_monitoring_service")
 
 	s.assignmentsMutex.Lock()
 	defer s.assignmentsMutex.Unlock()

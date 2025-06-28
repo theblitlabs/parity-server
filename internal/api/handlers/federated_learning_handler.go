@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
+	"github.com/theblitlabs/gologger"
 	requestmodels "github.com/theblitlabs/parity-server/internal/api/models"
 	"github.com/theblitlabs/parity-server/internal/core/ports"
 )
@@ -22,7 +22,7 @@ func NewFederatedLearningHandler(service ports.FederatedLearningService) *Federa
 }
 
 func (h *FederatedLearningHandler) CreateSession(c *gin.Context) {
-	log := log.With().Str("component", "fl_handler").Logger()
+	log := gologger.WithComponent("fl_handler")
 
 	var req requestmodels.CreateFLSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -75,7 +75,7 @@ func (h *FederatedLearningHandler) CreateSession(c *gin.Context) {
 }
 
 func (h *FederatedLearningHandler) GetSession(c *gin.Context) {
-	log := log.With().Str("component", "fl_handler").Logger()
+	log := gologger.WithComponent("fl_handler")
 
 	sessionIDStr := c.Param("id")
 	sessionID, err := uuid.Parse(sessionIDStr)
@@ -129,7 +129,7 @@ func (h *FederatedLearningHandler) GetSession(c *gin.Context) {
 }
 
 func (h *FederatedLearningHandler) ListSessions(c *gin.Context) {
-	log := log.With().Str("component", "fl_handler").Logger()
+	log := gologger.WithComponent("fl_handler").Logger()
 
 	creatorAddress := c.Query("creator")
 
@@ -185,7 +185,7 @@ func (h *FederatedLearningHandler) ListSessions(c *gin.Context) {
 }
 
 func (h *FederatedLearningHandler) StartSession(c *gin.Context) {
-	log := log.With().Str("component", "fl_handler").Logger()
+	log := gologger.WithComponent("fl_handler").Logger()
 
 	sessionIDStr := c.Param("id")
 	sessionID, err := uuid.Parse(sessionIDStr)
@@ -205,7 +205,7 @@ func (h *FederatedLearningHandler) StartSession(c *gin.Context) {
 }
 
 func (h *FederatedLearningHandler) SubmitModelUpdate(c *gin.Context) {
-	log := log.With().Str("component", "fl_handler").Logger()
+	log := gologger.WithComponent("fl_handler").Logger()
 
 	var req requestmodels.SubmitModelUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -228,7 +228,7 @@ func (h *FederatedLearningHandler) SubmitModelUpdate(c *gin.Context) {
 }
 
 func (h *FederatedLearningHandler) GetRound(c *gin.Context) {
-	log := log.With().Str("component", "fl_handler").Logger()
+	log := gologger.WithComponent("fl_handler").Logger()
 
 	sessionIDStr := c.Param("id")
 	roundNumberStr := c.Param("roundNumber")
@@ -255,7 +255,7 @@ func (h *FederatedLearningHandler) GetRound(c *gin.Context) {
 }
 
 func (h *FederatedLearningHandler) GetModel(c *gin.Context) {
-	log := log.With().Str("component", "fl_handler").Logger()
+	log := gologger.WithComponent("fl_handler").Logger()
 
 	sessionIDStr := c.Param("id")
 	sessionID, err := uuid.Parse(sessionIDStr)
