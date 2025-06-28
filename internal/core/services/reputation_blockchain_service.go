@@ -43,7 +43,7 @@ func NewReputationBlockchainService(
 	}
 
 	// Load contract ABI (now uses embedded ABI)
-	contractABI, err := loadContractABI("")
+	contractABI, err := loadContractABI()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load contract ABI: %w", err)
 	}
@@ -366,7 +366,7 @@ func (s *ReputationBlockchainService) VerifyReputationIntegrity(ctx context.Cont
 }
 
 // Helper function to load contract ABI (now uses embedded ABI)
-func loadContractABI(abiPath string) (abi.ABI, error) {
+func loadContractABI() (abi.ABI, error) {
 	// Use embedded ABI instead of reading from file
 	contractABI, err := abi.JSON(strings.NewReader(runnerReputationABI))
 	if err != nil {
@@ -374,11 +374,4 @@ func loadContractABI(abiPath string) (abi.ABI, error) {
 	}
 
 	return contractABI, nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

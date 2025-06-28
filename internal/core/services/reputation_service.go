@@ -176,7 +176,7 @@ func (s *ReputationService) RegisterRunner(ctx context.Context, runnerID, wallet
 	}
 
 	// Register on smart contract
-	if err := s.registerRunnerOnContract(ctx, runnerID, walletAddress); err != nil {
+	if err := s.registerRunnerOnContract(runnerID, walletAddress); err != nil {
 		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to register runner on smart contract")
 		// Don't fail the registration if blockchain fails, but log the error
 	}
@@ -298,7 +298,7 @@ func (s *ReputationService) UpdateReputationForTask(ctx context.Context, runnerI
 		reputation.Status = models.ReputationStatusBanned
 
 		// Ban on smart contract
-		if err := s.banRunnerOnContract(ctx, runnerID, banReason); err != nil {
+		if err := s.banRunnerOnContract(runnerID, banReason); err != nil {
 			log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to ban runner on smart contract")
 		}
 
@@ -331,7 +331,7 @@ func (s *ReputationService) UpdateReputationForTask(ctx context.Context, runnerI
 	}
 
 	// Update on smart contract
-	if err := s.updateReputationOnContract(ctx, runnerID, eventType, scoreDelta, reason); err != nil {
+	if err := s.updateReputationOnContract(runnerID, eventType, scoreDelta, reason); err != nil {
 		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to update reputation on smart contract")
 	}
 
@@ -371,7 +371,7 @@ func (s *ReputationService) ReportMaliciousBehavior(ctx context.Context, runnerI
 		reputation.Status = models.ReputationStatusBanned
 
 		// Ban on smart contract
-		if err := s.banRunnerOnContract(ctx, runnerID, reason); err != nil {
+		if err := s.banRunnerOnContract(runnerID, reason); err != nil {
 			log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to ban malicious runner on smart contract")
 		}
 
@@ -400,7 +400,7 @@ func (s *ReputationService) ReportMaliciousBehavior(ctx context.Context, runnerI
 	}
 
 	// Update on smart contract
-	if err := s.updateReputationOnContract(ctx, runnerID, models.ReputationEventTypeMaliciousBehavior, scoreDelta, reason); err != nil {
+	if err := s.updateReputationOnContract(runnerID, models.ReputationEventTypeMaliciousBehavior, scoreDelta, reason); err != nil {
 		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to report malicious behavior on smart contract")
 	}
 
@@ -408,7 +408,7 @@ func (s *ReputationService) ReportMaliciousBehavior(ctx context.Context, runnerI
 }
 
 // Helper methods for smart contract interaction
-func (s *ReputationService) registerRunnerOnContract(ctx context.Context, runnerID, walletAddress string) error {
+func (s *ReputationService) registerRunnerOnContract(runnerID, walletAddress string) error {
 	log := gologger.WithComponent("reputation_service")
 
 	// Get private key from environment for contract interactions
@@ -492,7 +492,7 @@ func (s *ReputationService) checkBannedOnContract(ctx context.Context, runnerID 
 	return false, fmt.Errorf("invalid response from contract")
 }
 
-func (s *ReputationService) updateReputationOnContract(ctx context.Context, runnerID string, eventType models.ReputationEventType, scoreDelta int, reason string) error {
+func (s *ReputationService) updateReputationOnContract(runnerID string, eventType models.ReputationEventType, scoreDelta int, reason string) error {
 	log := gologger.WithComponent("reputation_service")
 
 	// Get private key from environment for contract interactions
@@ -534,7 +534,7 @@ func (s *ReputationService) updateReputationOnContract(ctx context.Context, runn
 	return nil
 }
 
-func (s *ReputationService) banRunnerOnContract(ctx context.Context, runnerID, reason string) error {
+func (s *ReputationService) banRunnerOnContract(runnerID, reason string) error {
 	log := gologger.WithComponent("reputation_service")
 
 	// Get private key from environment for contract interactions
@@ -656,7 +656,7 @@ func (s *ReputationService) SlashRunnerStake(ctx context.Context, runnerID strin
 	if reputation.ReputationScore <= BAN_THRESHOLD {
 		reputation.Status = models.ReputationStatusBanned
 		// Ban on smart contract as well
-		if err := s.banRunnerOnContract(ctx, runnerID, fmt.Sprintf("Stake slashed: %s", reason)); err != nil {
+		if err := s.banRunnerOnContract(runnerID, fmt.Sprintf("Stake slashed: %s", reason)); err != nil {
 			log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to ban runner on contract after slashing")
 		}
 	} else if reputation.ReputationScore <= WARNING_THRESHOLD {
@@ -686,7 +686,7 @@ func (s *ReputationService) SlashRunnerStake(ctx context.Context, runnerID strin
 	}
 
 	// Update on smart contract
-	if err := s.updateReputationOnContract(ctx, runnerID, models.ReputationEventTypeSlashing, -100, reason); err != nil {
+	if err := s.updateReputationOnContract(runnerID, models.ReputationEventTypeSlashing, -100, reason); err != nil {
 		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to update reputation on contract after slashing")
 	}
 

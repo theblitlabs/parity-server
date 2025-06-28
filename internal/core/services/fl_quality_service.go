@@ -52,21 +52,21 @@ func (s *FLQualityService) MonitorParticipantQuality(ctx context.Context, sessio
 	}
 
 	// Calculate reliability metrics
-	reliabilityMetrics, err := s.calculateParticipantReliability(ctx, runnerID)
+	reliabilityMetrics, err := s.calculateParticipantReliability()
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to calculate participant reliability")
 		return err
 	}
 
 	// Calculate network quality
-	networkMetrics, err := s.calculateNetworkQuality(ctx, runnerID)
+	networkMetrics, err := s.calculateNetworkQuality()
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to calculate network quality")
 		return err
 	}
 
 	// Calculate resource efficiency
-	resourceMetrics, err := s.calculateResourceEfficiency(ctx, runnerID)
+	resourceMetrics, err := s.calculateResourceEfficiency()
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to calculate resource efficiency")
 		return err
@@ -152,28 +152,28 @@ func (s *FLQualityService) MonitorSessionQuality(ctx context.Context, sessionID 
 	}
 
 	// Calculate participant quality metrics
-	participantMetrics, err := s.calculateSessionParticipantQuality(ctx, sessionID)
+	participantMetrics, err := s.calculateSessionParticipantQuality()
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to calculate participant quality")
 		return err
 	}
 
 	// Calculate data quality
-	dataMetrics, err := s.calculateDataQuality(ctx, session)
+	dataMetrics, err := s.calculateDataQuality(session)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to calculate data quality")
 		return err
 	}
 
 	// Calculate infrastructure quality
-	infraMetrics, err := s.calculateInfrastructureQuality(ctx, sessionID)
+	infraMetrics, err := s.calculateInfrastructureQuality()
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to calculate infrastructure quality")
 		return err
 	}
 
 	// Calculate security and privacy scores
-	securityMetrics, err := s.calculateSecurityMetrics(ctx, session)
+	securityMetrics, err := s.calculateSecurityMetrics(session)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to calculate security metrics")
 		return err
@@ -311,7 +311,7 @@ func (s *FLQualityService) calculateParticipantPerformance(ctx context.Context, 
 	}, nil
 }
 
-func (s *FLQualityService) calculateParticipantReliability(ctx context.Context, runnerID string) (*struct {
+func (s *FLQualityService) calculateParticipantReliability() (*struct {
 	UptimePercentage     float64
 	HeartbeatConsistency float64
 	ErrorRate            float64
@@ -329,7 +329,7 @@ func (s *FLQualityService) calculateParticipantReliability(ctx context.Context, 
 	}, nil
 }
 
-func (s *FLQualityService) calculateNetworkQuality(ctx context.Context, runnerID string) (*struct {
+func (s *FLQualityService) calculateNetworkQuality() (*struct {
 	AverageLatency       float64
 	BandwidthUtilization float64
 	ConnectionStability  float64
@@ -346,7 +346,7 @@ func (s *FLQualityService) calculateNetworkQuality(ctx context.Context, runnerID
 	}, nil
 }
 
-func (s *FLQualityService) calculateResourceEfficiency(ctx context.Context, runnerID string) (*struct {
+func (s *FLQualityService) calculateResourceEfficiency() (*struct {
 	CPUEfficiency      float64
 	MemoryEfficiency   float64
 	StorageUtilization float64
@@ -399,7 +399,7 @@ func (s *FLQualityService) calculateConvergenceQuality(ctx context.Context, sess
 	}, nil
 }
 
-func (s *FLQualityService) calculateSessionParticipantQuality(ctx context.Context, sessionID uuid.UUID) (*struct {
+func (s *FLQualityService) calculateSessionParticipantQuality() (*struct {
 	ParticipantRetention      float64
 	AverageParticipantQuality float64
 	ParticipantConsistency    float64
@@ -416,7 +416,7 @@ func (s *FLQualityService) calculateSessionParticipantQuality(ctx context.Contex
 	}, nil
 }
 
-func (s *FLQualityService) calculateDataQuality(ctx context.Context, session *models.FederatedLearningSession) (*struct {
+func (s *FLQualityService) calculateDataQuality(session *models.FederatedLearningSession) (*struct {
 	DataDistribution          string
 	DataIntegrity             float64
 	PartitioningEffectiveness float64
@@ -433,7 +433,7 @@ func (s *FLQualityService) calculateDataQuality(ctx context.Context, session *mo
 	}, nil
 }
 
-func (s *FLQualityService) calculateInfrastructureQuality(ctx context.Context, sessionID uuid.UUID) (*struct {
+func (s *FLQualityService) calculateInfrastructureQuality() (*struct {
 	SystemLatency         float64
 	NetworkEfficiency     float64
 	ResourceUtilization   float64
@@ -453,7 +453,7 @@ func (s *FLQualityService) calculateInfrastructureQuality(ctx context.Context, s
 	}, nil
 }
 
-func (s *FLQualityService) calculateSecurityMetrics(ctx context.Context, session *models.FederatedLearningSession) (*struct {
+func (s *FLQualityService) calculateSecurityMetrics(session *models.FederatedLearningSession) (*struct {
 	PrivacyCompliance     float64
 	SecurityScore         float64
 	AnomalyDetectionScore float64

@@ -323,13 +323,14 @@ func (s *RunnerMonitoringService) updateTargetMetrics(targetID string) error {
 	totalResponseTime := time.Duration(0)
 
 	for _, task := range tasks {
-		if task.Status == models.TaskStatusCompleted {
+		switch task.Status {
+		case models.TaskStatusCompleted:
 			completedCount++
 			if task.CompletedAt != nil && !task.CreatedAt.IsZero() {
 				responseTime := task.CompletedAt.Sub(task.CreatedAt)
 				totalResponseTime += responseTime
 			}
-		} else if task.Status == models.TaskStatusFailed {
+		case models.TaskStatusFailed:
 			failedCount++
 		}
 

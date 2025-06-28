@@ -107,7 +107,7 @@ func (s *FLRewardService) DistributeRoundRewards(ctx context.Context, sessionID,
 			continue
 		}
 
-		if err := s.transferRewardToParticipant(ctx, session, participant, participantReward); err != nil {
+		if err := s.transferRewardToParticipant(session, participant, participantReward); err != nil {
 			log.Error().Err(err).
 				Str("participant_id", participant.RunnerID).
 				Float64("reward", participantReward).
@@ -164,7 +164,7 @@ func (s *FLRewardService) DistributeSessionCompletionBonus(ctx context.Context, 
 		Msg("Calculated completion bonus")
 
 	for _, participantID := range sessionParticipants {
-		if err := s.transferCompletionBonus(ctx, session, participantID, bonusPerParticipant); err != nil {
+		if err := s.transferCompletionBonus(session, participantID, bonusPerParticipant); err != nil {
 			log.Error().Err(err).
 				Str("participant_id", participantID).
 				Float64("bonus", bonusPerParticipant).
@@ -247,7 +247,6 @@ func (s *FLRewardService) calculateParticipantReward(
 }
 
 func (s *FLRewardService) transferRewardToParticipant(
-	ctx context.Context,
 	session *models.FederatedLearningSession,
 	participant *models.FLRoundParticipant,
 	rewardAmount float64,
@@ -265,12 +264,10 @@ func (s *FLRewardService) transferRewardToParticipant(
 	)
 	rewardBigInt, _ := rewardWei.Int(nil)
 
-	// Always use real wallet implementation - no more mock transfers
-	return s.transferWithRealWallet(log, session.CreatorAddress, participant.RunnerID, rewardBigInt)
+	return s.transferWithWallet(log, session.CreatorAddress, participant.RunnerID, rewardBigInt)
 }
 
 func (s *FLRewardService) transferCompletionBonus(
-	ctx context.Context,
 	session *models.FederatedLearningSession,
 	participantID string,
 	bonusAmount float64,
@@ -289,12 +286,12 @@ func (s *FLRewardService) transferCompletionBonus(
 		Logger()
 
 	// Always use real wallet implementation - no more mock transfers
-	return s.transferWithRealWallet(log, session.CreatorAddress, participantID, bonusBigInt)
+	return s.transferWithWallet(log, session.CreatorAddress, participantID, bonusBigInt)
 }
 
 // Removed mock wallet transfer function - all transfers are now real blockchain transactions
 
-func (s *FLRewardService) transferWithRealWallet(log zerolog.Logger, creatorAddress, participantID string, amount *big.Int) error {
+func (s *FLRewardService) transferWithWallet(log zerolog.Logger, creatorAddress, participantID string, amount *big.Int) error {
 	// Initialize real wallet client (same as docker reward distribution)
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
