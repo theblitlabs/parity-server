@@ -66,7 +66,7 @@ The core orchestration server for the PLGenesis decentralized AI and compute net
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/theblitlabs/parity-server.git
+git clone https://github.com/virajbhartiya/parity-server.git
 cd parity-server
 ```
 
