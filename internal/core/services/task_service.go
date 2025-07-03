@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -608,16 +609,23 @@ func (s *TaskService) handleStalledTask(task *models.Task) error {
 
 	runner, err := s.runnerService.GetRunner(context.Background(), task.RunnerID)
 	if err != nil {
-		return err
-	}
-
-	runner.Status = models.RunnerStatusOffline
-	runner.TaskID = nil
-	if _, err := s.runnerService.UpdateRunner(context.Background(), runner); err != nil {
-		log.Error().Err(err).
-			Str("runner_id", runner.DeviceID).
-			Msg("Failed to update runner status")
-		return err
+		if errors.Is(err, ErrRunnerNotFound) || strings.Contains(err.Error(), "runner not found") {
+			log.Info().
+				Str("task_id", task.ID.String()).
+				Str("runner_id", task.RunnerID).
+				Msg("Runner not found for stalled task, resetting task only")
+		} else {
+			return err
+		}
+	} else {
+		runner.Status = models.RunnerStatusOffline
+		runner.TaskID = nil
+		if _, err := s.runnerService.UpdateRunner(context.Background(), runner); err != nil {
+			log.Error().Err(err).
+				Str("runner_id", runner.DeviceID).
+				Msg("Failed to update runner status")
+			return err
+		}
 	}
 
 	task.Status = models.TaskStatusPending
@@ -636,6 +644,12 @@ func (s *TaskService) checkAndAssignPendingTasksToRunner(ctx context.Context, ru
 
 	runner, err := s.runnerService.GetRunner(ctx, runnerID)
 	if err != nil {
+		if errors.Is(err, ErrRunnerNotFound) || strings.Contains(err.Error(), "runner not found") {
+			log.Info().
+				Str("runner_id", runnerID).
+				Msg("Runner not found for pending task assignment, skipping")
+			return nil
+		}
 		return fmt.Errorf("failed to get runner: %w", err)
 	}
 	if runner.Status != models.RunnerStatusOnline {
