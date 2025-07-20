@@ -14,12 +14,13 @@ import (
 	"github.com/theblitlabs/parity-server/internal/core/config"
 )
 
-func RunServer() {
+func RunServer() error {
 	log := gologger.Get()
 
 	cfg, err := config.GetConfigManager().GetConfig()
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to load configuration")
+		log.Error().Err(err).Msg("Failed to load configuration")
+		return err
 	}
 
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
@@ -40,20 +41,28 @@ func RunServer() {
 		InitRouter().
 		Build()
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize server")
+		log.Error().Err(err).Msg("Failed to initialize server")
+		return err
 	}
 
+	serverErrChan := make(chan error, 1)
 	go func() {
 		serverAddr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
 		log.Info().Str("address", serverAddr).Msg("Server starting")
 
 		if err := server.HttpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("Server failed to start")
+			log.Error().Err(err).Msg("Server failed to start")
+			serverErrChan <- err
 		}
 	}()
 
-	<-stopChan
-	log.Info().Msg("Shutdown signal received, gracefully shutting down...")
+	select {
+	case <-stopChan:
+		log.Info().Msg("Shutdown signal received, gracefully shutting down...")
+	case err := <-serverErrChan:
+		log.Error().Err(err).Msg("Server error occurred")
+		return err
+	}
 
 	shutdownTimeoutCtx, cancel := context.WithTimeout(shutdownCtx, 20*time.Second)
 	defer cancel()
@@ -73,5 +82,5 @@ func RunServer() {
 
 	log.Info().Msg("Shutdown completed successfully, exiting")
 
-	os.Exit(0)
+	return nil
 }

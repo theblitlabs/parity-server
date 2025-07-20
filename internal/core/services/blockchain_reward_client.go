@@ -60,7 +60,8 @@ func (c *BlockchainRewardClient) DistributeRewards(result *models.TaskResult) er
 		FileName: KeystoreFileName,
 	})
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create keystore")
+		log.Error().Err(err).Msg("Failed to create keystore")
+		return fmt.Errorf("keystore creation failed: %w", err)
 	}
 
 	privateKey, err := ks.LoadPrivateKey()

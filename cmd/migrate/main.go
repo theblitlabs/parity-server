@@ -33,7 +33,8 @@ func main() {
 	// Connect to database
 	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to connect to database")
+		log.Error().Err(err).Msg("Failed to connect to database")
+		os.Exit(1)
 	}
 
 	log.Info().Msg("Connected to database successfully")
@@ -50,7 +51,8 @@ func main() {
 
 	for _, model := range modelsList {
 		if err := db.AutoMigrate(model); err != nil {
-			log.Fatal().Err(err).Msgf("Error migrating %T", model)
+			log.Error().Err(err).Msgf("Error migrating %T", model)
+			os.Exit(1)
 		}
 	}
 
