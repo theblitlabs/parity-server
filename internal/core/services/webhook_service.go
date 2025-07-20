@@ -209,7 +209,11 @@ func (s *WebhookService) sendWebhookNotification(client *http.Client, webhook We
 			Msg("Failed to send webhook notification")
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("Failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

@@ -29,7 +29,7 @@ func NewRunnerHandler(taskService *services.TaskService, runnerService *services
 }
 
 func (h *RunnerHandler) RegisterRunner(c *gin.Context) {
-	var runner coremodels.Runner
+	var req models.RegisterRunnerRequest
 	log := gologger.WithComponent("runner_handler")
 
 	rawBody, err := io.ReadAll(c.Request.Body)
@@ -40,15 +40,20 @@ func (h *RunnerHandler) RegisterRunner(c *gin.Context) {
 	}
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(rawBody))
 
-	log.Info().Str("raw_body", string(rawBody)).Msg("Incoming request body")
+	log.Debug().Str("raw_body", string(rawBody)).Msg("Incoming request body")
 
-	if err := c.ShouldBindJSON(&runner); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Error().Err(err).Msg("Invalid request body")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	log.Info().Fields(map[string]interface{}{
+	runner := coremodels.Runner{
+		WalletAddress: req.WalletAddress,
+		Webhook:       req.Webhook,
+	}
+
+	log.Debug().Fields(map[string]interface{}{
 		"wallet_address": runner.WalletAddress,
 		"webhook":        runner.Webhook,
 		"status":         runner.Status,
@@ -75,6 +80,22 @@ func (h *RunnerHandler) RegisterRunner(c *gin.Context) {
 		log.Error().Err(err).Msg("Failed to create/update runner")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	if len(req.ModelCapabilities) > 0 {
+		capabilities := make([]coremodels.ModelCapability, len(req.ModelCapabilities))
+		for i, cap := range req.ModelCapabilities {
+			capabilities[i] = coremodels.ModelCapability{
+				RunnerID:  deviceID,
+				ModelName: cap.ModelName,
+				IsLoaded:  cap.IsLoaded,
+				MaxTokens: cap.MaxTokens,
+			}
+		}
+
+		if err := h.runnerService.UpdateModelCapabilities(c.Request.Context(), deviceID, capabilities); err != nil {
+			log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to update model capabilities")
+		}
 	}
 
 	log.Info().Fields(map[string]interface{}{
@@ -224,7 +245,11 @@ func (h *RunnerHandler) NotifyRunnerOfTasks(runnerID string, tasks []*coremodels
 			Msg("Failed to notify runner, will be handled on next heartbeat")
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("Failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

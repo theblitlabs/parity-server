@@ -1,6 +1,39 @@
-# Parity Protocol
+# Parity Server
 
-A decentralized compute network enabling trustless task execution with token incentives. Task creators can submit compute tasks (e.g., Docker containers, scripts) to a pool, while runners compete to execute them for rewards. Built with Go and blockchain technology for transparent, secure, and efficient distributed computing.
+The core orchestration server for the PLGenesis decentralized AI and compute network. Parity Server handles task distribution, LLM request routing, federated learning coordination, runner management, and blockchain interactions. It provides a robust REST API for clients and manages the entire network coordination.
+
+## 🚀 Features
+
+### 🤖 LLM Infrastructure
+
+- **Model Discovery**: Automatic detection and listing of available LLM models across runners
+- **Async Processing**: Non-blocking prompt submission with real-time status tracking
+- **Smart Routing**: Intelligent distribution of LLM requests to capable runners
+- **Token Economics**: Comprehensive billing and reward mechanisms for LLM inference
+
+### 🧠 Federated Learning Coordination
+
+- **Session Management**: Create, coordinate, and monitor distributed federated learning sessions
+- **Participant Auto-Selection**: Automatic assignment of online runners to FL sessions
+- **Data Partitioning**: Server-side coordination of 5 data partitioning strategies
+- **Model Aggregation**: FedAvg and other aggregation algorithms with customizable methods
+- **Round Management**: Automatic progression through training rounds with status tracking
+- **Privacy Controls**: Support for differential privacy and secure aggregation
+- **Requirements Validation**: Strict validation of all training parameters with no default values
+
+### ⚡ Compute Task Management
+
+- **Task Distribution**: Efficient routing of compute tasks to available runners
+- **Status Tracking**: Real-time monitoring of task progress and completion
+- **Load Balancing**: Intelligent workload distribution based on runner capabilities
+- **Error Recovery**: Robust handling of failures and automatic retry mechanisms
+
+### 🔒 Network Coordination
+
+- **Runner Registration**: Secure onboarding and capability reporting
+- **Heartbeat Monitoring**: Automatic detection of offline runners
+- **Webhook Management**: Real-time task notifications and status updates
+- **Blockchain Integration**: Transparent verification and reward distribution
 
 ## Table of Contents
 
@@ -10,6 +43,7 @@ A decentralized compute network enabling trustless task execution with token inc
 - [Development](#development)
 - [Docker Setup](#docker-setup)
 - [Configuration](#configuration)
+- [Federated Learning](#federated-learning)
 - [CLI Usage](#cli-usage)
 - [API Documentation](#api-documentation)
 - [Security](#security)
@@ -32,7 +66,7 @@ A decentralized compute network enabling trustless task execution with token inc
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/theblitlabs/parity-server.git
+git clone https://github.com/virajbhartiya/parity-server.git
 cd parity-server
 ```
 
@@ -123,11 +157,13 @@ The Docker setup includes:
 Create a `.env` file with the following configuration:
 
 ```env
-# Ethereum Configuration
-ETHEREUM_CHAIN_ID=11155111                                                         # Sepolia testnet
-ETHEREUM_RPC=https://eth-sepolia.g.alchemy.com/v2/API_KEY
-ETHEREUM_STAKE_WALLET_ADDRESS=0x261259e9467E042DBBF372906e17b94fC06942f2        # Stake wallet address
-ETHEREUM_TOKEN_ADDRESS=0x844303bcC1a347bE6B409Ae159b4040d84876024              # Token contract address
+# Blockchain Network Configuration
+BLOCKCHAIN_CHAIN_ID=1                                                              # Blockchain Network
+BLOCKCHAIN_RPC=https://mainnet.infura.io/v3/${INFURA_PROJECT_ID}
+BLOCKCHAIN_STAKE_WALLET_ADDRESS=0x1234567890123456789012345678901234567890        # Stake wallet address
+BLOCKCHAIN_TOKEN_ADDRESS=0xabcdefabcdefabcdefabcdefabcdefabcdefabcd              # ERC20 token contract address
+BLOCKCHAIN_TOKEN_SYMBOL=TOKEN                                                      # Token symbol (configurable)
+BLOCKCHAIN_NETWORK_NAME=Blockchain Network                                          # Network name (configurable)
 
 # Database Configuration
 DATABASE_USERNAME=postgres
@@ -136,9 +172,10 @@ DATABASE_HOST=localhost
 DATABASE_PORT=5432
 DATABASE_DATABASE_NAME=parity
 
-# AWS Configuration
-AWS_REGION=ap-south-1
-AWS_BUCKET_NAME=dev-parity-docker-images
+# Blockchain Storage Configuration
+BLOCKCHAIN_IPFS_ENDPOINT=http://localhost:5001
+BLOCKCHAIN_GATEWAY_URL=https://gateway.pinata.cloud
+BLOCKCHAIN_CREATE_STORAGE_DEALS=false
 
 # Server Configuration
 SERVER_PORT=8080
@@ -154,21 +191,96 @@ RUNNER_SERVER_URL=http://localhost:8080
 SCHEDULER_INTERVAL=10
 ```
 
-> **Important**: The above configuration shows the current Sepolia testnet setup. Key contract details:
+> **Important**: The above configuration shows a generic blockchain setup. Key contract details:
 >
-> - Network: Sepolia Testnet (Chain ID: 11155111)
-> - Token Contract: [`0x844303bcC1a347bE6B409Ae159b4040d84876024`](https://sepolia.etherscan.io/address/0x844303bcC1a347bE6B409Ae159b4040d84876024)
-> - Stake Wallet: [`0x261259e9467E042DBBF372906e17b94fC06942f2`](https://sepolia.etherscan.io/address/0x261259e9467E042DBBF372906e17b94fC06942f2)
+> - Network: Blockchain Network (Chain ID: 1)
+> - Token Contract: `0xabcdefabcdefabcdefabcdefabcdefabcdefabcd`
+> - Stake Wallet: `0x1234567890123456789012345678901234567890`
+> - Token Symbol: TOKEN (configurable via `BLOCKCHAIN_TOKEN_SYMBOL`)
+> - Network Name: Blockchain Network (configurable via `BLOCKCHAIN_NETWORK_NAME`)
 >
 > For production deployment, you should replace these values with your own:
 >
 > - Database credentials
-> - Ethereum RPC endpoint
+> - Blockchain RPC endpoint
 > - Network chain ID
 > - Token contract address
 > - Stake wallet address
-> - AWS credentials and region
+> - Token symbol and network name
+> - Blockchain/IPFS endpoints and gateway
 > - Scheduler interval
+
+## Federated Learning
+
+The parity-server coordinates federated learning sessions with strict requirements validation and no default values.
+
+### Key Capabilities
+
+#### 🎯 Requirements-Based System
+
+- **No Default Values**: All training parameters must be explicitly provided by clients
+- **Strict Validation**: Comprehensive parameter validation with clear error messages
+- **Configuration Required**: Model architecture must be specified via client configuration files
+
+#### 🔄 Session Coordination
+
+- **Automatic Participant Assignment**: Server assigns unique participant indices to runners
+- **Round Management**: Automatic progression through training rounds
+- **Status Tracking**: Real-time monitoring of session and participant status
+- **Model Aggregation**: Server performs FedAvg aggregation with configurable methods
+
+#### 📊 Data Partitioning Support
+
+The server coordinates data partitioning across participants:
+
+1. **Random (IID)**: Uniform random distribution
+2. **Stratified**: Maintains class distribution across participants
+3. **Sequential**: Consecutive data splits
+4. **Non-IID**: Dirichlet distribution for realistic heterogeneity
+5. **Label Skew**: Each participant gets subset of classes
+
+#### 🛡️ Validation & Safety
+
+- **Model Config Validation**: Ensures all required model parameters are provided
+- **Training Parameter Validation**: Validates learning rates, batch sizes, epochs
+- **Partition Strategy Validation**: Strategy-specific requirement checking
+- **NaN Protection**: Built-in safeguards against numerical instability
+
+### FL Session Lifecycle
+
+1. **Session Creation**: Client provides complete configuration
+2. **Participant Assignment**: Server auto-assigns online runners with unique indices
+3. **Data Partitioning**: Server coordinates partitioning based on strategy
+4. **Training Tasks**: Server creates tasks with participant-specific configurations
+5. **Model Updates**: Runners submit weights and gradients
+6. **Aggregation**: Server performs FedAvg aggregation
+7. **Round Progression**: Automatic advancement to next round or completion
+
+### Configuration Requirements
+
+All FL sessions require explicit configuration:
+
+```json
+{
+  "session_config": {
+    "aggregation_method": "federated_averaging",
+    "learning_rate": 0.001,
+    "batch_size": 32,
+    "local_epochs": 5
+  },
+  "model_config": {
+    "input_size": 784,
+    "hidden_size": 128,
+    "output_size": 10
+  },
+  "partition_config": {
+    "strategy": "non_iid",
+    "alpha": 0.5,
+    "min_samples": 100,
+    "overlap_ratio": 0.0
+  }
+}
+```
 
 ### CLI Usage
 
@@ -187,12 +299,67 @@ parity-server stake --amount 10
 # Check balance
 parity-server balance
 
-
 # View all available commands
 parity-server --help
 ```
 
 ### API Documentation
+
+#### Federated Learning Endpoints
+
+| Method | Endpoint                                       | Description          | Requirements                     |
+| ------ | ---------------------------------------------- | -------------------- | -------------------------------- |
+| POST   | /api/v1/federated-learning/sessions            | Create FL session    | Complete model + training config |
+| GET    | /api/v1/federated-learning/sessions            | List FL sessions     | -                                |
+| GET    | /api/v1/federated-learning/sessions/{id}       | Get session details  | -                                |
+| POST   | /api/v1/federated-learning/sessions/{id}/start | Start FL session     | -                                |
+| GET    | /api/v1/federated-learning/sessions/{id}/model | Get trained model    | Session completed                |
+| POST   | /api/v1/federated-learning/model-updates       | Submit model updates | Valid weights + gradients        |
+
+#### Create FL Session Request Example
+
+```json
+{
+  "name": "MNIST Classification",
+  "description": "Distributed digit classification",
+  "model_type": "neural_network",
+  "total_rounds": 10,
+  "min_participants": 3,
+  "creator_address": "0x1234567890123456789012345678901234567890",
+  "training_data": {
+    "dataset_cid": "QmYourDatasetCID",
+    "data_format": "csv",
+    "split_strategy": "non_iid",
+    "metadata": {
+      "alpha": 0.5,
+      "min_samples": 100,
+      "overlap_ratio": 0.0
+    }
+  },
+  "config": {
+    "aggregation_method": "federated_averaging",
+    "learning_rate": 0.001,
+    "batch_size": 32,
+    "local_epochs": 5,
+    "model_config": {
+      "input_size": 784,
+      "hidden_size": 128,
+      "output_size": 10
+    }
+  }
+}
+```
+
+#### LLM Endpoints
+
+| Method | Endpoint                         | Description                        |
+| ------ | -------------------------------- | ---------------------------------- |
+| GET    | `/api/llm/models`                | List all available LLM models      |
+| POST   | `/api/llm/prompts`               | Submit a prompt for LLM processing |
+| GET    | `/api/llm/prompts/{id}`          | Get prompt status and response     |
+| GET    | `/api/llm/prompts`               | List recent prompts                |
+| POST   | `/api/llm/prompts/{id}/complete` | Complete prompt (internal use)     |
+| GET    | `/api/llm/billing/metrics`       | Get billing metrics for client     |
 
 #### Task Endpoints
 
@@ -220,7 +387,85 @@ parity-server --help
 | GET    | /api/runners/stats               | Get runner statistics |
 | POST   | /api/runners/heartbeat           | Send heartbeat        |
 
-### Contributing
+#### Storage Endpoints
+
+| Method | Endpoint                    | Description                  |
+| ------ | --------------------------- | ---------------------------- |
+| POST   | /api/storage/upload         | Upload file to IPFS/Blockchain |
+| GET    | /api/storage/download/{cid} | Download file by CID         |
+| GET    | /api/storage/info/{cid}     | Get file information         |
+| POST   | /api/storage/pin/{cid}      | Pin file to IPFS             |
+
+#### Health & Status Endpoints
+
+| Method | Endpoint    | Description   |
+| ------ | ----------- | ------------- |
+| GET    | /api/health | Health check  |
+| GET    | /api/status | System status |
+
+## Security
+
+### Federated Learning Security
+
+- **Input Validation**: All FL parameters are strictly validated
+- **Configuration Verification**: Model configs must be explicitly provided
+- **Participant Authentication**: Secure runner verification for FL sessions
+- **Data Isolation**: Each participant only accesses their data partition
+- **Aggregation Security**: Server-side validation of model updates
+
+### General Security
+
+- **Authentication**: Secure API access with proper validation
+- **Data Protection**: IPFS/Blockchain integration for secure data storage
+- **Network Security**: Blockchain integration for transparent operations
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Federated Learning Issues**
+
+   - **Invalid model configuration**: Ensure complete model config is provided
+   - **Missing training parameters**: All training parameters must be explicitly set
+   - **Partition validation errors**: Check strategy-specific requirements
+   - **No participants available**: Ensure runners are online and registered
+
+2. **Database Connection Issues**
+
+   - Check PostgreSQL is running and accessible
+   - Verify database credentials in `.env` file
+   - Ensure database exists and migrations are applied
+
+3. **Runner Registration Issues**
+
+   - Verify runner webhook endpoints are accessible
+   - Check heartbeat monitoring configuration
+   - Ensure proper network connectivity
+
+4. **Docker Issues**
+   - Ensure Docker and Docker Compose are installed
+   - Check port conflicts (default: 8080, 5432)
+   - Verify environment variables are properly set
+
+### Error Examples
+
+**FL Configuration Error**:
+
+```
+model configuration is required - please provide model parameters
+```
+
+**Solution**: Ensure client provides complete model configuration via API
+
+**Partition Validation Error**:
+
+```
+alpha parameter is required for non_iid partitioning strategy
+```
+
+**Solution**: Provide alpha parameter in training data metadata for non_iid strategy
+
+## Contributing
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
@@ -236,6 +481,6 @@ Please ensure your PR:
 - Follows the existing code style
 - Includes a clear description of changes
 
-### License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

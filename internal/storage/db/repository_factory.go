@@ -1,6 +1,7 @@
 package db
 
 import (
+	"github.com/theblitlabs/parity-server/internal/core/ports"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
 	"gorm.io/gorm"
 )
@@ -27,6 +28,18 @@ func (f *RepositoryFactory) TaskRepository() *repositories.TaskRepository {
 
 func (f *RepositoryFactory) RunnerRepository() *repositories.RunnerRepository {
 	return repositories.NewRunnerRepository(f.db)
+}
+
+func (f *RepositoryFactory) FLSessionRepository() ports.FLSessionRepository {
+	return repositories.NewFLSessionRepository(f.db)
+}
+
+func (f *RepositoryFactory) FLRoundRepository() ports.FLRoundRepository {
+	return repositories.NewFLRoundRepository(f.db)
+}
+
+func (f *RepositoryFactory) FLParticipantRepository() ports.FLParticipantRepository {
+	return repositories.NewFLParticipantRepository(f.db)
 }
 
 var repositoryFactory *RepositoryFactory

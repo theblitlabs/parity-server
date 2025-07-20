@@ -17,10 +17,12 @@ import (
 	"github.com/theblitlabs/parity-server/internal/api"
 	"github.com/theblitlabs/parity-server/internal/api/handlers"
 	"github.com/theblitlabs/parity-server/internal/core/config"
+	"github.com/theblitlabs/parity-server/internal/core/ports"
 	"github.com/theblitlabs/parity-server/internal/core/services"
+	"github.com/theblitlabs/parity-server/internal/database"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
-	"github.com/theblitlabs/parity-server/internal/storage/db"
 	"github.com/theblitlabs/parity-server/internal/utils"
+	"gorm.io/gorm"
 )
 
 const (
@@ -29,18 +31,21 @@ const (
 )
 
 type Server struct {
-	Config           *config.Config
-	HttpServer       *http.Server
-	DBManager        *db.DBManager
-	TaskService      *services.TaskService
-	RunnerService    *services.RunnerService
-	HeartbeatService *services.HeartbeatService
-	TaskHandler      *handlers.TaskHandler
-	RunnerHandler    *handlers.RunnerHandler
-	WebhookHandler   *handlers.WebhookHandler
-	StopChannel      chan struct{}
-	monitorCancel    context.CancelFunc
-	monitorWg        *sync.WaitGroup
+	Config                  *config.Config
+	HttpServer              *http.Server
+	DB                      *gorm.DB
+	TaskService             *services.TaskService
+	RunnerService           *services.RunnerService
+	ReputationService       *services.ReputationService
+	RunnerMonitoringService *services.RunnerMonitoringService
+	HeartbeatService        *services.HeartbeatService
+	TaskQueue               *services.TaskQueue
+	TaskHandler             *handlers.TaskHandler
+	RunnerHandler           *handlers.RunnerHandler
+	WebhookHandler          *handlers.WebhookHandler
+	StopChannel             chan struct{}
+	monitorCancel           context.CancelFunc
+	monitorWg               *sync.WaitGroup
 }
 
 func (s *Server) Shutdown(ctx context.Context) {
@@ -76,6 +81,21 @@ func (s *Server) Shutdown(ctx context.Context) {
 	s.HeartbeatService.Stop()
 	log.Info().Msg("Stopped heartbeat monitoring service")
 
+	// Stop task queue processor
+	if s.TaskQueue != nil {
+		s.TaskQueue.Stop()
+		log.Info().Msg("Stopped task queue processor")
+	}
+
+	// Stop reputation monitoring service
+	if s.RunnerMonitoringService != nil {
+		if err := s.RunnerMonitoringService.Stop(); err != nil {
+			log.Warn().Err(err).Msg("Error stopping reputation monitoring service")
+		} else {
+			log.Info().Msg("Stopped reputation monitoring service")
+		}
+	}
+
 	if s.RunnerService != nil {
 		if err := s.RunnerService.StopTaskMonitor(); err != nil {
 			log.Warn().Err(err).Msg("Error stopping task monitor")
@@ -103,7 +123,9 @@ func (s *Server) Shutdown(ctx context.Context) {
 	log.Info().Dur("duration_ms", time.Since(cleanupStart)).Msg("Webhook resources cleanup completed")
 
 	dbCloseStart := time.Now()
-	if err := s.DBManager.Close(); err != nil {
+	if sqlDB, err := s.DB.DB(); err != nil {
+		log.Error().Err(err).Msg("Error getting underlying *sql.DB")
+	} else if err := sqlDB.Close(); err != nil {
 		log.Error().Err(err).Msg("Error closing database connection")
 	} else {
 		log.Info().Dur("duration_ms", time.Since(dbCloseStart)).Msg("Database connection closed successfully")
@@ -113,27 +135,42 @@ func (s *Server) Shutdown(ctx context.Context) {
 }
 
 type ServerBuilder struct {
-	config              *config.Config
-	dbManager           *db.DBManager
-	repoFactory         *db.RepositoryFactory
-	taskRepo            *repositories.TaskRepository
-	runnerRepo          *repositories.RunnerRepository
-	taskService         *services.TaskService
-	runnerService       *services.RunnerService
-	heartbeatService    *services.HeartbeatService
-	webhookService      *services.WebhookService
-	s3Service           *services.S3Service
-	verificationService *services.VerificationService
-	stakeWallet         *walletsdk.StakeWallet
-	taskHandler         *handlers.TaskHandler
-	runnerHandler       *handlers.RunnerHandler
-	webhookHandler      *handlers.WebhookHandler
-	httpServer          *http.Server
-	stopChannel         chan struct{}
-	monitorCtx          context.Context
-	monitorCancel       context.CancelFunc
-	monitorWg           *sync.WaitGroup
-	err                 error
+	config                      *config.Config
+	DB                          *gorm.DB
+	taskRepo                    *repositories.TaskRepository
+	runnerRepo                  *repositories.RunnerRepository
+	reputationRepo              *repositories.ReputationRepository
+	promptRepo                  ports.PromptRepository
+	billingRepo                 ports.BillingRepository
+	flSessionRepo               ports.FLSessionRepository
+	flRoundRepo                 ports.FLRoundRepository
+	flParticipantRepo           ports.FLParticipantRepository
+	taskService                 *services.TaskService
+	runnerService               *services.RunnerService
+	reputationService           *services.ReputationService
+	reputationBlockchainService *services.ReputationBlockchainService
+	runnerMonitoringService     *services.RunnerMonitoringService
+	llmService                  *services.LLMService
+	taskQueue                   *services.TaskQueue
+	heartbeatService            *services.HeartbeatService
+	webhookService              *services.WebhookService
+	storageService              services.StorageService
+	verificationService         *services.VerificationService
+	federatedLearningService    *services.FederatedLearningService
+	flRewardService             *services.FLRewardService
+	stakeWallet                 *walletsdk.StakeWallet
+	taskHandler                 *handlers.TaskHandler
+	runnerHandler               *handlers.RunnerHandler
+	reputationHandler           *handlers.ReputationHandler
+	webhookHandler              *handlers.WebhookHandler
+	llmHandler                  *handlers.LLMHandler
+	federatedLearningHandler    *handlers.FederatedLearningHandler
+	httpServer                  *http.Server
+	stopChannel                 chan struct{}
+	monitorCtx                  context.Context
+	monitorCancel               context.CancelFunc
+	monitorWg                   *sync.WaitGroup
+	err                         error
 }
 
 func NewServerBuilder(cfg *config.Config) *ServerBuilder {
@@ -155,12 +192,13 @@ func (sb *ServerBuilder) InitDatabase() *ServerBuilder {
 
 	URL := sb.config.Database.GetConnectionURL()
 
-	sb.dbManager = db.GetDBManager()
-	if err := sb.dbManager.Connect(ctx, URL); err != nil {
+	db, err := database.Connect(ctx, URL)
+	if err != nil {
 		sb.err = fmt.Errorf("failed to connect to database: %w", err)
 		return sb
 	}
 
+	sb.DB = db
 	log.Info().Msg("Successfully connected to database")
 	return sb
 }
@@ -170,12 +208,14 @@ func (sb *ServerBuilder) InitRepositories() *ServerBuilder {
 		return sb
 	}
 
-	gormDB := sb.dbManager.GetDB()
-	db.InitRepositoryFactory(gormDB)
-	sb.repoFactory = db.GetRepositoryFactory()
-
-	sb.taskRepo = sb.repoFactory.TaskRepository()
-	sb.runnerRepo = sb.repoFactory.RunnerRepository()
+	sb.taskRepo = repositories.NewTaskRepository(sb.DB)
+	sb.runnerRepo = repositories.NewRunnerRepository(sb.DB)
+	sb.reputationRepo = repositories.NewReputationRepository(sb.DB)
+	sb.promptRepo = repositories.NewPromptRepository(sb.DB)
+	sb.billingRepo = repositories.NewBillingRepository(sb.DB)
+	sb.flSessionRepo = repositories.NewFLSessionRepository(sb.DB)
+	sb.flRoundRepo = repositories.NewFLRoundRepository(sb.DB)
+	sb.flParticipantRepo = repositories.NewFLParticipantRepository(sb.DB)
 
 	return sb
 }
@@ -186,7 +226,7 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 	}
 
 	rewardCalculator := services.NewRewardCalculator()
-	rewardClient := services.NewEthereumRewardClient(sb.config)
+	rewardClient := services.NewBlockchainRewardClient(sb.config)
 
 	sb.runnerService = services.NewRunnerService(sb.runnerRepo)
 	sb.taskService = services.NewTaskService(sb.taskRepo, rewardCalculator.(*services.RewardCalculator), sb.runnerService)
@@ -195,14 +235,69 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 
 	sb.webhookService = services.NewWebhookService(sb.taskService)
 
-	s3Service, err := services.NewS3Service(sb.config)
+	storageService, err := services.NewStorageService(sb.config)
 	if err != nil {
-		sb.err = fmt.Errorf("failed to initialize S3 service: %w", err)
+		sb.err = fmt.Errorf("failed to initialize storage service: %w", err)
 		return sb
 	}
-	sb.s3Service = s3Service
+	sb.storageService = storageService
 
 	sb.verificationService = services.NewVerificationService(sb.taskRepo)
+
+	// Initialize task queue before LLM service
+	sb.taskQueue = services.NewTaskQueue(sb.promptRepo, sb.runnerRepo, sb.runnerService)
+
+	sb.llmService = services.NewLLMService(sb.promptRepo, sb.billingRepo, sb.runnerRepo, sb.runnerService, sb.taskQueue)
+	sb.federatedLearningService = services.NewFederatedLearningService(
+		sb.flSessionRepo,
+		sb.flRoundRepo,
+		sb.flParticipantRepo,
+		sb.runnerService,
+		sb.taskService,
+	)
+
+	// Initialize FL reward service
+	sb.flRewardService = services.NewFLRewardService(
+		sb.config,
+		sb.flSessionRepo,
+		sb.flParticipantRepo,
+		sb.runnerService,
+	)
+	sb.federatedLearningService.SetFLRewardService(sb.flRewardService)
+
+	// Initialize reputation blockchain service
+	blockchainService, ok := sb.storageService.(*services.BlockchainService)
+	if !ok {
+		// Create a minimal service for reputation blockchain
+		blockchainService = nil
+	}
+
+	reputationBlockchainService, err := services.NewReputationBlockchainService(sb.config, blockchainService)
+	if err != nil {
+		sb.err = fmt.Errorf("failed to initialize reputation blockchain service: %w", err)
+		return sb
+	}
+	sb.reputationBlockchainService = reputationBlockchainService
+
+	// Initialize reputation service
+	reputationService, err := services.NewReputationService(
+		sb.reputationRepo,
+		sb.reputationBlockchainService,
+		sb.config.BlockchainNetwork.RPC,
+		sb.config.SmartContract.ReputationContractAddress,
+	)
+	if err != nil {
+		sb.err = fmt.Errorf("failed to initialize reputation service: %w", err)
+		return sb
+	}
+	sb.reputationService = reputationService
+
+	// Initialize runner monitoring service
+	sb.runnerMonitoringService = services.NewRunnerMonitoringService(
+		sb.runnerService,
+		sb.reputationService,
+		sb.taskService,
+	)
 
 	return sb
 }
@@ -246,6 +341,19 @@ func (sb *ServerBuilder) InitTaskMonitoring() *ServerBuilder {
 	log.Info().Msg("Starting task monitoring services")
 	sb.taskService.StartMonitoring()
 
+	// Start task queue processor
+	go sb.taskQueue.Start(sb.monitorCtx)
+	log.Info().Msg("Task queue processor started")
+
+	// Start reputation monitoring service if enabled
+	if sb.config.Reputation.MonitoringEnabled && sb.runnerMonitoringService != nil {
+		if err := sb.runnerMonitoringService.Start(); err != nil {
+			log.Warn().Err(err).Msg("Failed to start runner monitoring service")
+		} else {
+			log.Info().Msg("Runner monitoring service started")
+		}
+	}
+
 	return sb
 }
 
@@ -276,9 +384,9 @@ func (sb *ServerBuilder) InitWallet() *ServerBuilder {
 	}
 
 	walletClient, err := walletsdk.NewClient(walletsdk.ClientConfig{
-		RPCURL:       sb.config.Ethereum.RPC,
-		ChainID:      sb.config.Ethereum.ChainID,
-		TokenAddress: common.HexToAddress(sb.config.Ethereum.TokenAddress),
+		RPCURL:       sb.config.BlockchainNetwork.RPC,
+		ChainID:      sb.config.BlockchainNetwork.ChainID,
+		TokenAddress: common.HexToAddress(sb.config.BlockchainNetwork.TokenAddress),
 		PrivateKey:   common.Bytes2Hex(crypto.FromECDSA(privateKey)),
 	})
 	if err != nil {
@@ -288,8 +396,8 @@ func (sb *ServerBuilder) InitWallet() *ServerBuilder {
 
 	stakeWallet, err := walletsdk.NewStakeWallet(
 		walletClient,
-		common.HexToAddress(sb.config.Ethereum.StakeWalletAddress),
-		common.HexToAddress(sb.config.Ethereum.TokenAddress),
+		common.HexToAddress(sb.config.BlockchainNetwork.StakeWalletAddress),
+		common.HexToAddress(sb.config.BlockchainNetwork.TokenAddress),
 	)
 	if err != nil {
 		sb.err = fmt.Errorf("failed to create stake wallet: %w", err)
@@ -305,18 +413,26 @@ func (sb *ServerBuilder) InitRouter() *ServerBuilder {
 		return sb
 	}
 
-	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.s3Service, sb.verificationService)
+	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.storageService, sb.verificationService, sb.config)
 	sb.taskHandler.SetStakeWallet(sb.stakeWallet)
 	sb.taskHandler.SetWebhookService(sb.webhookService)
+
+	// FL reward service now uses real blockchain transactions directly
 
 	sb.runnerHandler = handlers.NewRunnerHandler(sb.taskService, sb.runnerService)
 	sb.webhookHandler = handlers.NewWebhookHandler(sb.webhookService, sb.runnerService)
 	sb.webhookHandler.SetStopChannel(sb.stopChannel)
+	sb.llmHandler = handlers.NewLLMHandler(sb.llmService)
+	sb.federatedLearningHandler = handlers.NewFederatedLearningHandler(sb.federatedLearningService)
+	sb.reputationHandler = handlers.NewReputationHandler(sb.reputationService, sb.runnerMonitoringService)
 
 	router := api.NewRouter(
 		sb.taskHandler,
 		sb.runnerHandler,
 		sb.webhookHandler,
+		sb.llmHandler,
+		sb.federatedLearningHandler,
+		sb.reputationHandler,
 		sb.config.Server.Endpoint,
 	)
 
@@ -339,17 +455,20 @@ func (sb *ServerBuilder) Build() (*Server, error) {
 	}
 
 	return &Server{
-		Config:           sb.config,
-		HttpServer:       sb.httpServer,
-		DBManager:        sb.dbManager,
-		TaskService:      sb.taskService,
-		RunnerService:    sb.runnerService,
-		HeartbeatService: sb.heartbeatService,
-		TaskHandler:      sb.taskHandler,
-		RunnerHandler:    sb.runnerHandler,
-		WebhookHandler:   sb.webhookHandler,
-		StopChannel:      sb.stopChannel,
-		monitorCancel:    sb.monitorCancel,
-		monitorWg:        sb.monitorWg,
+		Config:                  sb.config,
+		HttpServer:              sb.httpServer,
+		DB:                      sb.DB,
+		TaskService:             sb.taskService,
+		RunnerService:           sb.runnerService,
+		ReputationService:       sb.reputationService,
+		RunnerMonitoringService: sb.runnerMonitoringService,
+		HeartbeatService:        sb.heartbeatService,
+		TaskQueue:               sb.taskQueue,
+		TaskHandler:             sb.taskHandler,
+		RunnerHandler:           sb.runnerHandler,
+		WebhookHandler:          sb.webhookHandler,
+		StopChannel:             sb.stopChannel,
+		monitorCancel:           sb.monitorCancel,
+		monitorWg:               sb.monitorWg,
 	}, nil
 }

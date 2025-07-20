@@ -92,10 +92,12 @@ func (r *RunnerRepository) Update(ctx context.Context, runner *models.Runner) (*
 
 func (r *RunnerRepository) ListByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error) {
 	var runners []*models.Runner
+
 	result := r.db.WithContext(ctx).Where("status = ?", status).Find(&runners)
 	if result.Error != nil {
 		return nil, result.Error
 	}
+
 	return runners, nil
 }
 
@@ -135,4 +137,42 @@ func (r *RunnerRepository) UpdateRunnersToOffline(ctx context.Context, heartbeat
 	}
 
 	return result.RowsAffected, deviceIDs, nil
+}
+
+func (r *RunnerRepository) GetOnlineRunners(ctx context.Context) ([]*models.Runner, error) {
+	var runners []*models.Runner
+	err := r.db.WithContext(ctx).
+		Preload("ModelCapabilities").
+		Where("status = ?", models.RunnerStatusOnline).
+		Find(&runners).Error
+	return runners, err
+}
+
+func (r *RunnerRepository) GetRunnerByDeviceID(ctx context.Context, deviceID string) (*models.Runner, error) {
+	var runner models.Runner
+	err := r.db.WithContext(ctx).
+		Preload("ModelCapabilities").
+		Where("device_id = ?", deviceID).
+		First(&runner).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrRunnerNotFound
+	}
+	return &runner, err
+}
+
+func (r *RunnerRepository) UpdateModelCapabilities(ctx context.Context, runnerID string, capabilities []models.ModelCapability) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("runner_id = ?", runnerID).Delete(&models.ModelCapability{}).Error; err != nil {
+			return err
+		}
+
+		if len(capabilities) > 0 {
+			for i := range capabilities {
+				capabilities[i].RunnerID = runnerID
+			}
+			return tx.Create(&capabilities).Error
+		}
+
+		return nil
+	})
 }

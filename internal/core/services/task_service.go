@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ type TaskRepository interface {
 	GetAll(ctx context.Context) ([]models.Task, error)
 	SaveTaskResult(ctx context.Context, result *models.TaskResult) error
 	GetTaskResult(ctx context.Context, taskID uuid.UUID) (*models.TaskResult, error)
+	GetTasksByRunner(ctx context.Context, runnerID string, limit int) ([]*models.Task, error)
 }
 
 type TaskService struct {
@@ -315,6 +317,63 @@ func (s *TaskService) CompleteTask(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *TaskService) FailTask(ctx context.Context, id string, reason string) error {
+	log := gologger.WithComponent("task_service")
+	log.Debug().Str("task_id", id).Str("reason", reason).Msg("Attempting to fail task")
+
+	taskUUID, err := uuid.Parse(id)
+	if err != nil {
+		log.Error().Err(err).Str("task_id", id).Msg("Invalid task ID format")
+		return fmt.Errorf("invalid task ID format: %w", err)
+	}
+
+	task, err := s.repo.Get(ctx, taskUUID)
+	if err != nil {
+		log.Error().Err(err).Str("task_id", id).Msg("Failed to get task")
+		return err
+	}
+
+	// Allow failing tasks in any status except completed
+	if task.Status == models.TaskStatusCompleted {
+		log.Warn().
+			Str("task_id", id).
+			Str("status", string(task.Status)).
+			Msg("Cannot fail task that is already completed")
+		return fmt.Errorf("cannot fail task that is already completed")
+	}
+
+	task.Status = models.TaskStatusFailed
+	task.UpdatedAt = time.Now()
+	now := time.Now()
+	task.CompletedAt = &now
+
+	if err := s.repo.Update(ctx, task); err != nil {
+		log.Error().Err(err).Str("task_id", id).Msg("Failed to update task status to failed")
+		return err
+	}
+
+	// Clear runner assignment if task has a runner
+	if task.RunnerID != "" {
+		runner, err := s.runnerService.GetRunner(ctx, task.RunnerID)
+		if err == nil {
+			runner.TaskID = nil
+			if _, updateErr := s.runnerService.UpdateRunner(ctx, runner); updateErr != nil {
+				log.Error().Err(updateErr).Str("runner_id", task.RunnerID).Msg("Failed to clear runner TaskID after task failure")
+			} else {
+				log.Info().Str("runner_id", task.RunnerID).Msg("Runner TaskID cleared after task failure")
+			}
+		}
+	}
+
+	log.Info().
+		Str("task_id", id).
+		Str("reason", reason).
+		Str("status", string(task.Status)).
+		Msg("Task marked as failed")
+
+	return nil
+}
+
 func (s *TaskService) GetTaskResult(ctx context.Context, taskID string) (*models.TaskResult, error) {
 	taskUUID, err := uuid.Parse(taskID)
 	if err != nil {
@@ -550,16 +609,23 @@ func (s *TaskService) handleStalledTask(task *models.Task) error {
 
 	runner, err := s.runnerService.GetRunner(context.Background(), task.RunnerID)
 	if err != nil {
-		return err
-	}
-
-	runner.Status = models.RunnerStatusOffline
-	runner.TaskID = nil
-	if _, err := s.runnerService.UpdateRunner(context.Background(), runner); err != nil {
-		log.Error().Err(err).
-			Str("runner_id", runner.DeviceID).
-			Msg("Failed to update runner status")
-		return err
+		if errors.Is(err, ErrRunnerNotFound) || strings.Contains(err.Error(), "runner not found") {
+			log.Info().
+				Str("task_id", task.ID.String()).
+				Str("runner_id", task.RunnerID).
+				Msg("Runner not found for stalled task, resetting task only")
+		} else {
+			return err
+		}
+	} else {
+		runner.Status = models.RunnerStatusOffline
+		runner.TaskID = nil
+		if _, err := s.runnerService.UpdateRunner(context.Background(), runner); err != nil {
+			log.Error().Err(err).
+				Str("runner_id", runner.DeviceID).
+				Msg("Failed to update runner status")
+			return err
+		}
 	}
 
 	task.Status = models.TaskStatusPending
@@ -578,6 +644,12 @@ func (s *TaskService) checkAndAssignPendingTasksToRunner(ctx context.Context, ru
 
 	runner, err := s.runnerService.GetRunner(ctx, runnerID)
 	if err != nil {
+		if errors.Is(err, ErrRunnerNotFound) || strings.Contains(err.Error(), "runner not found") {
+			log.Info().
+				Str("runner_id", runnerID).
+				Msg("Runner not found for pending task assignment, skipping")
+			return nil
+		}
 		return fmt.Errorf("failed to get runner: %w", err)
 	}
 	if runner.Status != models.RunnerStatusOnline {
@@ -746,6 +818,10 @@ func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.
 		return nil
 	}
 
+	if runner.Status != models.RunnerStatusOnline {
+		return nil
+	}
+
 	nonce := s.nonceService.GenerateNonce()
 	task.Nonce = nonce
 
@@ -825,7 +901,11 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 			Msg("Failed to send webhook request")
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("Failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -838,4 +918,23 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 	}
 
 	return nil
+}
+
+// GetTasksByRunner returns tasks assigned to a specific runner (limited to recent tasks)
+func (s *TaskService) GetTasksByRunner(ctx context.Context, runnerID string, limit int) ([]*models.Task, error) {
+	log := gologger.WithComponent("task_service")
+
+	tasks, err := s.repo.GetTasksByRunner(ctx, runnerID, limit)
+	if err != nil {
+		log.Error().Err(err).Str("runner_id", runnerID).Msg("Failed to get tasks by runner")
+		return nil, fmt.Errorf("failed to get tasks by runner: %w", err)
+	}
+
+	log.Debug().
+		Str("runner_id", runnerID).
+		Int("task_count", len(tasks)).
+		Int("limit", limit).
+		Msg("Retrieved tasks by runner")
+
+	return tasks, nil
 }

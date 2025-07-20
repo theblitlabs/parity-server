@@ -39,7 +39,53 @@ func registerRunnerRoutes(router *gin.RouterGroup, taskHandler *handlers.TaskHan
 	}
 }
 
-func RegisterRoutes(api *gin.RouterGroup, taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler) {
+func registerLLMRoutes(router *gin.RouterGroup, llmHandler *handlers.LLMHandler) {
+	llm := router.Group("/llm")
+	{
+		llm.GET("/models", llmHandler.GetAvailableModels)
+		llm.POST("/prompts", llmHandler.SubmitPrompt)
+		llm.GET("/prompts", llmHandler.ListPrompts)
+		llm.GET("/prompts/:id", llmHandler.GetPrompt)
+		llm.POST("/prompts/:id/complete", llmHandler.CompletePrompt)
+		llm.GET("/billing/metrics", llmHandler.GetBillingMetrics)
+	}
+}
+
+func registerFederatedLearningRoutes(router *gin.RouterGroup, flHandler *handlers.FederatedLearningHandler) {
+	fl := router.Group("/federated-learning")
+	{
+		fl.POST("/sessions", flHandler.CreateSession)
+		fl.GET("/sessions", flHandler.ListSessions)
+		fl.GET("/sessions/:id", flHandler.GetSession)
+		fl.POST("/sessions/:id/start", flHandler.StartSession)
+		fl.GET("/sessions/:id/model", flHandler.GetModel)
+		fl.POST("/model-updates", flHandler.SubmitModelUpdate)
+		fl.GET("/sessions/:id/rounds/:roundNumber", flHandler.GetRound)
+	}
+}
+
+func registerReputationRoutes(router *gin.RouterGroup, reputationHandler *handlers.ReputationHandler) {
+	reputation := router.Group("/reputation")
+	{
+		reputation.GET("/runners/:runner_id", reputationHandler.GetRunnerReputation)
+		reputation.GET("/leaderboard", reputationHandler.GetLeaderboard)
+		reputation.GET("/network/stats", reputationHandler.GetNetworkStats)
+		reputation.GET("/runners/:runner_id/events", reputationHandler.GetRunnerEvents)
+		reputation.POST("/report/malicious", reputationHandler.ReportMaliciousBehavior)
+
+		monitoring := reputation.Group("/monitoring")
+		{
+			monitoring.GET("/assignments", reputationHandler.GetMonitoringAssignments)
+			monitoring.GET("/stats", reputationHandler.GetMonitoringStats)
+			monitoring.GET("/runners/:runner_id/metrics", reputationHandler.GetRunnerMetrics)
+		}
+	}
+}
+
+func RegisterRoutes(api *gin.RouterGroup, taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, flHandler *handlers.FederatedLearningHandler, reputationHandler *handlers.ReputationHandler) {
 	registerTaskRoutes(api, taskHandler)
 	registerRunnerRoutes(api, taskHandler, runnerHandler, webhookHandler)
+	registerLLMRoutes(api, llmHandler)
+	registerFederatedLearningRoutes(api, flHandler)
+	registerReputationRoutes(api, reputationHandler)
 }

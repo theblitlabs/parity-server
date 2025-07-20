@@ -23,8 +23,10 @@ const (
 )
 
 const (
-	TaskTypeDocker  TaskType = "docker"
-	TaskTypeCommand TaskType = "command"
+	TaskTypeDocker            TaskType = "docker"
+	TaskTypeCommand           TaskType = "command"
+	TaskTypeLLM               TaskType = "llm"
+	TaskTypeFederatedLearning TaskType = "federated_learning"
 )
 
 type DockerConfig struct {
@@ -58,6 +60,12 @@ func (c *TaskConfig) Validate(taskType TaskType) error {
 		}
 	case TaskTypeCommand:
 		// Command can be empty for both Docker and Command tasks
+	case TaskTypeLLM:
+		// LLM tasks don't require Docker image or command validation
+		// Validation for model and prompt is done at the environment level
+	case TaskTypeFederatedLearning:
+		// FL tasks have their own validation logic
+		// No specific TaskConfig validation needed
 	default:
 		return fmt.Errorf("unsupported task type: %s", taskType)
 	}
@@ -72,6 +80,7 @@ type Task struct {
 	Status          TaskStatus         `json:"status" gorm:"type:varchar(50)"`
 	Config          json.RawMessage    `json:"config" gorm:"type:jsonb"`
 	Environment     *EnvironmentConfig `json:"environment" gorm:"type:jsonb"`
+	Reward          float64            `json:"reward,omitempty" gorm:"type:decimal(20,8);default:0"`
 	CreatorAddress  string             `json:"creator_address" gorm:"type:varchar(42)"`
 	CreatorDeviceID string             `json:"creator_device_id" gorm:"type:varchar(255)"`
 	RunnerID        string             `json:"runner_id" gorm:"type:varchar(255)"`
@@ -100,6 +109,15 @@ func (t *Task) Validate() error {
 
 	if t.Type == "" {
 		return errors.New("task type is required")
+	}
+
+	// Skip config validation for federated learning tasks as they have different structure
+	if t.Type == TaskTypeFederatedLearning {
+		// FL tasks have their own config format, just check that config exists
+		if len(t.Config) == 0 {
+			return errors.New("config is required for federated learning tasks")
+		}
+		return nil
 	}
 
 	var config TaskConfig

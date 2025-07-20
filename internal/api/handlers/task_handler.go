@@ -14,6 +14,7 @@ import (
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
 	requestmodels "github.com/theblitlabs/parity-server/internal/api/models"
+	"github.com/theblitlabs/parity-server/internal/core/config"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/core/services"
 	"github.com/theblitlabs/parity-server/internal/utils"
@@ -21,19 +22,21 @@ import (
 
 type TaskHandler struct {
 	service             *services.TaskService
-	s3Service           *services.S3Service
+	storageService      services.StorageService
 	stakeWallet         *walletsdk.StakeWallet
 	webhookService      *services.WebhookService
 	verificationService *services.VerificationService
 	webhooks            map[string]requestmodels.WebhookRegistration
+	config              *config.Config
 }
 
-func NewTaskHandler(service *services.TaskService, s3Service *services.S3Service, verificationService *services.VerificationService) *TaskHandler {
+func NewTaskHandler(service *services.TaskService, storageService services.StorageService, verificationService *services.VerificationService, cfg *config.Config) *TaskHandler {
 	return &TaskHandler{
 		service:             service,
-		s3Service:           s3Service,
+		storageService:      storageService,
 		verificationService: verificationService,
 		webhooks:            make(map[string]requestmodels.WebhookRegistration),
+		config:              cfg,
 	}
 }
 
@@ -113,7 +116,11 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open Docker image file"})
 				return
 			}
-			defer f.Close()
+			defer func() {
+				if closeErr := f.Close(); closeErr != nil {
+					log.Error().Err(closeErr).Msg("Failed to close Docker image file")
+				}
+			}()
 
 			dockerImage, err = io.ReadAll(f)
 			if err != nil {
@@ -122,7 +129,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 				return
 			}
 
-			imageURL, err := h.s3Service.UploadDockerImage(c.Request.Context(), dockerImage, strings.TrimSuffix(file.Filename, ".tar"))
+			imageURL, err := h.storageService.UploadDockerImage(c.Request.Context(), dockerImage, strings.TrimSuffix(file.Filename, ".tar"))
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to upload Docker image")
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upload Docker image"})
@@ -328,7 +335,7 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 
 	if !info.Exists {
 		log.Error().Str("device_id", task.CreatorDeviceID).Msg("Device is not registered in staking contract")
-		return fmt.Errorf("device %s is not registered in the staking contract - please stake PRTY tokens first", task.CreatorDeviceID)
+		return fmt.Errorf("device %s is not registered in the staking contract - please stake %s tokens first", task.CreatorDeviceID, h.getTokenSymbol())
 	}
 
 	minRequiredStake := big.NewInt(10)
@@ -338,13 +345,22 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 			Str("current_balance", info.Amount.String()).
 			Str("required_balance", minRequiredStake.String()).
 			Msg("Insufficient stake balance")
-		return fmt.Errorf("insufficient stake balance for device %s - current balance: %v PRTY, minimum required: %v PRTY",
+		return fmt.Errorf("insufficient stake balance for device %s - current balance: %v %s, minimum required: %v %s",
 			task.CreatorDeviceID,
 			info.Amount.String(),
-			minRequiredStake.String())
+			h.getTokenSymbol(),
+			minRequiredStake.String(),
+			h.getTokenSymbol())
 	}
 
 	return nil
+}
+
+func (h *TaskHandler) getTokenSymbol() string {
+	if h.config != nil && h.config.BlockchainNetwork.TokenSymbol != "" {
+		return h.config.BlockchainNetwork.TokenSymbol
+	}
+	return "TOKEN" // Default fallback
 }
 
 func (h *TaskHandler) ListTasks(c *gin.Context) {

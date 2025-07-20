@@ -8,7 +8,7 @@ services:
     ports:
       - "${DATABASE_PORT}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME} -d ${DATABASE_DATABASE_NAME}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME} -d ${DATABASE_DATABASE_NAME}" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -16,23 +16,24 @@ services:
   app:
     build: .
     environment:
-      - PRIVATE_KEY=${PRIVATE_KEY}  # This should be provided when running docker-compose
-      - DATABASE_HOST=postgres  # Override to use docker service name
+      - PRIVATE_KEY=${PRIVATE_KEY} # This should be provided when running docker-compose
+      - DATABASE_HOST=postgres # Override to use docker service name
       - DATABASE_PORT=5432
       - DATABASE_USERNAME=${DATABASE_USERNAME}
       - DATABASE_PASSWORD=${DATABASE_PASSWORD}
       - DATABASE_DATABASE_NAME=${DATABASE_DATABASE_NAME}
-      - ETHEREUM_CHAIN_ID=${ETHEREUM_CHAIN_ID}
-      - ETHEREUM_RPC=${ETHEREUM_RPC}
-      - ETHEREUM_STAKE_WALLET_ADDRESS=${ETHEREUM_STAKE_WALLET_ADDRESS}
-      - ETHEREUM_TOKEN_ADDRESS=${ETHEREUM_TOKEN_ADDRESS}
+      - BLOCKCHAIN_CHAIN_ID=1
+      - BLOCKCHAIN_RPC=https://mainnet.infura.io/v3/${INFURA_PROJECT_ID}
+      - BLOCKCHAIN_STAKE_WALLET_ADDRESS=0x1fd2fA91C1eE96d128A35955EC3B496D7184c80A
+      - BLOCKCHAIN_TOKEN_ADDRESS=0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0
+      - BLOCKCHAIN_TOKEN_SYMBOL=TOKEN
+      - BLOCKCHAIN_NETWORK_NAME=Blockchain Network
       - SERVER_PORT=${SERVER_PORT}
       - SERVER_ENDPOINT=${SERVER_ENDPOINT}
       - SERVER_HOST=${SERVER_HOST}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=${AWS_REGION}
-      - AWS_BUCKET_NAME=${AWS_BUCKET_NAME}
+      - BLOCKCHAIN_IPFS_ENDPOINT=${BLOCKCHAIN_IPFS_ENDPOINT}
+      - BLOCKCHAIN_GATEWAY_URL=${BLOCKCHAIN_GATEWAY_URL}
+      - BLOCKCHAIN_CREATE_STORAGE_DEALS=${BLOCKCHAIN_CREATE_STORAGE_DEALS}
     ports:
       - "${SERVER_PORT}:8080"
     depends_on:

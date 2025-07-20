@@ -271,3 +271,19 @@ func (r *TaskRepository) GetTaskResult(ctx context.Context, taskID uuid.UUID) (*
 
 	return taskResult, nil
 }
+
+// GetTasksByRunner retrieves tasks assigned to a specific runner with a limit
+func (tr *TaskRepository) GetTasksByRunner(ctx context.Context, runnerID string, limit int) ([]*models.Task, error) {
+	var tasks []*models.Task
+
+	query := tr.db.WithContext(ctx).
+		Where("runner_id = ?", runnerID).
+		Order("created_at DESC")
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	err := query.Find(&tasks).Error
+	return tasks, err
+}
