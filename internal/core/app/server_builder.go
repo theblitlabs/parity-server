@@ -226,7 +226,7 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 	}
 
 	rewardCalculator := services.NewRewardCalculator()
-	rewardClient := services.NewFilecoinRewardClient(sb.config)
+	rewardClient := services.NewBlockchainRewardClient(sb.config)
 
 	sb.runnerService = services.NewRunnerService(sb.runnerRepo)
 	sb.taskService = services.NewTaskService(sb.taskRepo, rewardCalculator.(*services.RewardCalculator), sb.runnerService)
@@ -266,13 +266,13 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 	sb.federatedLearningService.SetFLRewardService(sb.flRewardService)
 
 	// Initialize reputation blockchain service
-	filecoinService, ok := sb.storageService.(*services.FilecoinService)
+	blockchainService, ok := sb.storageService.(*services.BlockchainService)
 	if !ok {
 		// Create a minimal service for reputation blockchain
-		filecoinService = nil
+		blockchainService = nil
 	}
 
-	reputationBlockchainService, err := services.NewReputationBlockchainService(sb.config, filecoinService)
+	reputationBlockchainService, err := services.NewReputationBlockchainService(sb.config, blockchainService)
 	if err != nil {
 		sb.err = fmt.Errorf("failed to initialize reputation blockchain service: %w", err)
 		return sb
@@ -283,7 +283,7 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 	reputationService, err := services.NewReputationService(
 		sb.reputationRepo,
 		sb.reputationBlockchainService,
-		sb.config.FilecoinNetwork.RPC,
+		sb.config.BlockchainNetwork.RPC,
 		sb.config.SmartContract.ReputationContractAddress,
 	)
 	if err != nil {
@@ -384,9 +384,9 @@ func (sb *ServerBuilder) InitWallet() *ServerBuilder {
 	}
 
 	walletClient, err := walletsdk.NewClient(walletsdk.ClientConfig{
-		RPCURL:       sb.config.FilecoinNetwork.RPC,
-		ChainID:      sb.config.FilecoinNetwork.ChainID,
-		TokenAddress: common.HexToAddress(sb.config.FilecoinNetwork.TokenAddress),
+		RPCURL:       sb.config.BlockchainNetwork.RPC,
+		ChainID:      sb.config.BlockchainNetwork.ChainID,
+		TokenAddress: common.HexToAddress(sb.config.BlockchainNetwork.TokenAddress),
 		PrivateKey:   common.Bytes2Hex(crypto.FromECDSA(privateKey)),
 	})
 	if err != nil {
@@ -396,8 +396,8 @@ func (sb *ServerBuilder) InitWallet() *ServerBuilder {
 
 	stakeWallet, err := walletsdk.NewStakeWallet(
 		walletClient,
-		common.HexToAddress(sb.config.FilecoinNetwork.StakeWalletAddress),
-		common.HexToAddress(sb.config.FilecoinNetwork.TokenAddress),
+		common.HexToAddress(sb.config.BlockchainNetwork.StakeWalletAddress),
+		common.HexToAddress(sb.config.BlockchainNetwork.TokenAddress),
 	)
 	if err != nil {
 		sb.err = fmt.Errorf("failed to create stake wallet: %w", err)
@@ -413,7 +413,7 @@ func (sb *ServerBuilder) InitRouter() *ServerBuilder {
 		return sb
 	}
 
-	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.storageService, sb.verificationService)
+	sb.taskHandler = handlers.NewTaskHandler(sb.taskService, sb.storageService, sb.verificationService, sb.config)
 	sb.taskHandler.SetStakeWallet(sb.stakeWallet)
 	sb.taskHandler.SetWebhookService(sb.webhookService)
 

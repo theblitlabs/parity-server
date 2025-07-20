@@ -14,6 +14,7 @@ import (
 	walletsdk "github.com/theblitlabs/go-wallet-sdk"
 	"github.com/theblitlabs/gologger"
 	requestmodels "github.com/theblitlabs/parity-server/internal/api/models"
+	"github.com/theblitlabs/parity-server/internal/core/config"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/core/services"
 	"github.com/theblitlabs/parity-server/internal/utils"
@@ -26,14 +27,16 @@ type TaskHandler struct {
 	webhookService      *services.WebhookService
 	verificationService *services.VerificationService
 	webhooks            map[string]requestmodels.WebhookRegistration
+	config              *config.Config
 }
 
-func NewTaskHandler(service *services.TaskService, storageService services.StorageService, verificationService *services.VerificationService) *TaskHandler {
+func NewTaskHandler(service *services.TaskService, storageService services.StorageService, verificationService *services.VerificationService, cfg *config.Config) *TaskHandler {
 	return &TaskHandler{
 		service:             service,
 		storageService:      storageService,
 		verificationService: verificationService,
 		webhooks:            make(map[string]requestmodels.WebhookRegistration),
+		config:              cfg,
 	}
 }
 
@@ -328,7 +331,7 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 
 	if !info.Exists {
 		log.Error().Str("device_id", task.CreatorDeviceID).Msg("Device is not registered in staking contract")
-		return fmt.Errorf("device %s is not registered in the staking contract - please stake USDFC tokens first", task.CreatorDeviceID)
+		return fmt.Errorf("device %s is not registered in the staking contract - please stake %s tokens first", task.CreatorDeviceID, h.getTokenSymbol())
 	}
 
 	minRequiredStake := big.NewInt(10)
@@ -338,13 +341,22 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 			Str("current_balance", info.Amount.String()).
 			Str("required_balance", minRequiredStake.String()).
 			Msg("Insufficient stake balance")
-		return fmt.Errorf("insufficient stake balance for device %s - current balance: %v USDFC, minimum required: %v USDFC",
+		return fmt.Errorf("insufficient stake balance for device %s - current balance: %v %s, minimum required: %v %s",
 			task.CreatorDeviceID,
 			info.Amount.String(),
-			minRequiredStake.String())
+			h.getTokenSymbol(),
+			minRequiredStake.String(),
+			h.getTokenSymbol())
 	}
 
 	return nil
+}
+
+func (h *TaskHandler) getTokenSymbol() string {
+	if h.config != nil && h.config.BlockchainNetwork.TokenSymbol != "" {
+		return h.config.BlockchainNetwork.TokenSymbol
+	}
+	return "TOKEN" // Default fallback
 }
 
 func (h *TaskHandler) ListTasks(c *gin.Context) {

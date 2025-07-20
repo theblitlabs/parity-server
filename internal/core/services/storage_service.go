@@ -12,5 +12,5 @@ type StorageService interface {
 }
 
 func NewStorageService(cfg *config.Config) (StorageService, error) {
-	return NewFilecoinService(cfg)
+	return NewBlockchainService(cfg)
 }

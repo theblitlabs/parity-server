@@ -114,10 +114,11 @@ func NewReputationService(
 ) (*ReputationService, error) {
 	log := gologger.WithComponent("reputation_service")
 
+	// Connect to blockchain client
 	ethClient, err := ethclient.Dial(ethRPCURL)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to connect to Ethereum client")
-		return nil, fmt.Errorf("failed to connect to Ethereum client: %w", err)
+		log.Error().Err(err).Msg("Failed to connect to blockchain client")
+		return nil, fmt.Errorf("failed to connect to blockchain client: %w", err)
 	}
 
 	contractABI, err := abi.JSON(strings.NewReader(reputationContractABI))
@@ -163,7 +164,7 @@ func (s *ReputationService) RegisterRunner(ctx context.Context, runnerID, wallet
 		LLMInferenceScore:      50.0,
 		FederatedLearningScore: 50.0,
 		StakeAmount:            0.0,
-		TotalEarningsUSDFC:     0.0,
+		TotalEarnings:          0.0,
 		LastActiveAt:           time.Now(),
 		CreatedAt:              time.Now(),
 		UpdatedAt:              time.Now(),
@@ -425,7 +426,7 @@ func (s *ReputationService) registerRunnerOnContract(runnerID, walletAddress str
 	}
 
 	// Create authenticated transactor
-	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, big.NewInt(314159)) // Filecoin Calibration Chain ID
+	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, big.NewInt(1)) // Blockchain Chain ID
 	if err != nil {
 		return fmt.Errorf("failed to create transactor: %w", err)
 	}
@@ -509,7 +510,7 @@ func (s *ReputationService) updateReputationOnContract(runnerID string, eventTyp
 	}
 
 	// Create authenticated transactor
-	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, big.NewInt(314159)) // Filecoin Calibration Chain ID
+	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, big.NewInt(1)) // Blockchain Chain ID
 	if err != nil {
 		return fmt.Errorf("failed to create transactor: %w", err)
 	}
@@ -551,7 +552,7 @@ func (s *ReputationService) banRunnerOnContract(runnerID, reason string) error {
 	}
 
 	// Create authenticated transactor
-	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, big.NewInt(314159)) // Filecoin Calibration Chain ID
+	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, big.NewInt(1)) // Blockchain Chain ID
 	if err != nil {
 		return fmt.Errorf("failed to create transactor: %w", err)
 	}

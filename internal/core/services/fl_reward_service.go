@@ -186,7 +186,7 @@ func (s *FLRewardService) DistributeSessionCompletionBonus(ctx context.Context, 
 
 func (s *FLRewardService) calculateSessionRewardPool(session *models.FederatedLearningSession) float64 {
 	// Base reward calculation based on model complexity, rounds, and participants
-	baseReward := 100.0 // Base USDFC amount
+	baseReward := 100.0 // Base token amount
 
 	// Scale by model complexity
 	complexityMultiplier := 1.0
@@ -257,7 +257,7 @@ func (s *FLRewardService) transferRewardToParticipant(
 		Float64("reward", rewardAmount).
 		Logger()
 
-	// Convert reward to wei (USDFC uses 18 decimals like ETH)
+	// Convert reward to wei (ERC20 tokens use 18 decimals like ETH)
 	rewardWei := new(big.Float).Mul(
 		new(big.Float).SetFloat64(rewardAmount),
 		new(big.Float).SetFloat64(1e18),
@@ -315,9 +315,9 @@ func (s *FLRewardService) transferWithWallet(log zerolog.Logger, creatorAddress,
 	}
 
 	client, err := walletsdk.NewClient(walletsdk.ClientConfig{
-		RPCURL:       s.cfg.FilecoinNetwork.RPC,
-		ChainID:      int64(s.cfg.FilecoinNetwork.ChainID),
-		TokenAddress: common.HexToAddress(s.cfg.FilecoinNetwork.TokenAddress),
+		RPCURL:       s.cfg.BlockchainNetwork.RPC,
+		ChainID:      int64(s.cfg.BlockchainNetwork.ChainID),
+		TokenAddress: common.HexToAddress(s.cfg.BlockchainNetwork.TokenAddress),
 		PrivateKey:   common.Bytes2Hex(crypto.FromECDSA(privateKey)),
 	})
 	if err != nil {
@@ -325,11 +325,11 @@ func (s *FLRewardService) transferWithWallet(log zerolog.Logger, creatorAddress,
 		return fmt.Errorf("wallet client failed: %w", err)
 	}
 
-	stakeWalletAddr := common.HexToAddress(s.cfg.FilecoinNetwork.StakeWalletAddress)
+	stakeWalletAddr := common.HexToAddress(s.cfg.BlockchainNetwork.StakeWalletAddress)
 	stakeWallet, err := walletsdk.NewStakeWallet(
 		client,
 		stakeWalletAddr,
-		common.HexToAddress(s.cfg.FilecoinNetwork.TokenAddress),
+		common.HexToAddress(s.cfg.BlockchainNetwork.TokenAddress),
 	)
 	if err != nil {
 		log.Error().Err(err).Msg("Stake wallet init failed")

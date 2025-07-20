@@ -157,11 +157,13 @@ The Docker setup includes:
 Create a `.env` file with the following configuration:
 
 ```env
-# Filecoin Network Configuration
-FILECOIN_CHAIN_ID=314159                                                         # Filecoin Calibration testnet
-FILECOIN_RPC=https://api.calibration.node.glif.io/rpc/v1
-FILECOIN_STAKE_WALLET_ADDRESS=0x7465e7a637f66cb7b294b856a25bc84abff1d247        # Stake wallet address
-FILECOIN_TOKEN_ADDRESS=0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0              # Token contract address
+# Blockchain Network Configuration
+BLOCKCHAIN_CHAIN_ID=1                                                              # Blockchain Network
+BLOCKCHAIN_RPC=https://mainnet.infura.io/v3/${INFURA_PROJECT_ID}
+BLOCKCHAIN_STAKE_WALLET_ADDRESS=0x1234567890123456789012345678901234567890        # Stake wallet address
+BLOCKCHAIN_TOKEN_ADDRESS=0xabcdefabcdefabcdefabcdefabcdefabcdefabcd              # ERC20 token contract address
+BLOCKCHAIN_TOKEN_SYMBOL=TOKEN                                                      # Token symbol (configurable)
+BLOCKCHAIN_NETWORK_NAME=Blockchain Network                                          # Network name (configurable)
 
 # Database Configuration
 DATABASE_USERNAME=postgres
@@ -170,10 +172,10 @@ DATABASE_HOST=localhost
 DATABASE_PORT=5432
 DATABASE_DATABASE_NAME=parity
 
-# Filecoin Storage Configuration
-FILECOIN_IPFS_ENDPOINT=http://localhost:5001
-FILECOIN_GATEWAY_URL=https://gateway.pinata.cloud
-FILECOIN_CREATE_STORAGE_DEALS=false
+# Blockchain Storage Configuration
+BLOCKCHAIN_IPFS_ENDPOINT=http://localhost:5001
+BLOCKCHAIN_GATEWAY_URL=https://gateway.pinata.cloud
+BLOCKCHAIN_CREATE_STORAGE_DEALS=false
 
 # Server Configuration
 SERVER_PORT=8080
@@ -189,20 +191,23 @@ RUNNER_SERVER_URL=http://localhost:8080
 SCHEDULER_INTERVAL=10
 ```
 
-> **Important**: The above configuration shows the current Sepolia testnet setup. Key contract details:
+> **Important**: The above configuration shows a generic blockchain setup. Key contract details:
 >
-> - Network: Filecoin Calibration Testnet (Chain ID: 314159)
-> - Token Contract: [`0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0`](https://filfox.info/en/address/0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0)
-> - Stake Wallet: [`0x7465e7a637f66cb7b294b856a25bc84abff1d247`](https://filfox.info/en/address/0x7465e7a637f66cb7b294b856a25bc84abff1d247)
+> - Network: Blockchain Network (Chain ID: 1)
+> - Token Contract: `0xabcdefabcdefabcdefabcdefabcdefabcdefabcd`
+> - Stake Wallet: `0x1234567890123456789012345678901234567890`
+> - Token Symbol: TOKEN (configurable via `BLOCKCHAIN_TOKEN_SYMBOL`)
+> - Network Name: Blockchain Network (configurable via `BLOCKCHAIN_NETWORK_NAME`)
 >
 > For production deployment, you should replace these values with your own:
 >
 > - Database credentials
-> - Filecoin RPC endpoint
+> - Blockchain RPC endpoint
 > - Network chain ID
 > - Token contract address
 > - Stake wallet address
-> - Filecoin/IPFS endpoints and gateway
+> - Token symbol and network name
+> - Blockchain/IPFS endpoints and gateway
 > - Scheduler interval
 
 ## Federated Learning
@@ -320,7 +325,7 @@ parity-server --help
   "model_type": "neural_network",
   "total_rounds": 10,
   "min_participants": 3,
-  "creator_address": "0x123...",
+  "creator_address": "0x1234567890123456789012345678901234567890",
   "training_data": {
     "dataset_cid": "QmYourDatasetCID",
     "data_format": "csv",
@@ -386,7 +391,7 @@ parity-server --help
 
 | Method | Endpoint                    | Description                  |
 | ------ | --------------------------- | ---------------------------- |
-| POST   | /api/storage/upload         | Upload file to IPFS/Filecoin |
+| POST   | /api/storage/upload         | Upload file to IPFS/Blockchain |
 | GET    | /api/storage/download/{cid} | Download file by CID         |
 | GET    | /api/storage/info/{cid}     | Get file information         |
 | POST   | /api/storage/pin/{cid}      | Pin file to IPFS             |
@@ -411,7 +416,7 @@ parity-server --help
 ### General Security
 
 - **Authentication**: Secure API access with proper validation
-- **Data Protection**: IPFS/Filecoin integration for secure data storage
+- **Data Protection**: IPFS/Blockchain integration for secure data storage
 - **Network Security**: Blockchain integration for transparent operations
 
 ## Troubleshooting

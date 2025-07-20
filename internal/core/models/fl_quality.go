@@ -95,7 +95,7 @@ type NetworkQualityMetrics struct {
 	ConnectionStability float64 `json:"connection_stability"` // percentage
 	ReconnectionRate    float64 `json:"reconnection_rate"`    // per hour
 
-	// IPFS/Filecoin Performance
+	// IPFS/Blockchain Performance
 	IPFSDownloadSpeed float64 `json:"ipfs_download_speed"` // bytes/second
 	IPFSUploadSpeed   float64 `json:"ipfs_upload_speed"`   // bytes/second
 	IPFSAvailability  float64 `json:"ipfs_availability"`   // percentage

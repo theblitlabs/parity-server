@@ -45,9 +45,9 @@ type ReputationBlockchainService interface {
 	StoreReputationData(ctx context.Context, data interface{}) (string, error) // Returns IPFS hash
 	RetrieveReputationData(ctx context.Context, ipfsHash string) (interface{}, error)
 
-	// Filecoin Storage
-	CreateFilecoinDeal(ctx context.Context, ipfsHash string) (string, error) // Returns deal ID
-	VerifyFilecoinDeal(ctx context.Context, dealID string) (bool, error)
+	// Blockchain Storage
+	CreateBlockchainDeal(ctx context.Context, ipfsHash string) (string, error) // Returns deal ID
+	VerifyBlockchainDeal(ctx context.Context, dealID string) (bool, error)
 
 	// On-chain Registration
 	RegisterReputationHash(ctx context.Context, runnerID, ipfsHash string) (string, error) // Returns tx hash

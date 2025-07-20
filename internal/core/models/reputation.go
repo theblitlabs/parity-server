@@ -39,7 +39,7 @@ type RunnerReputation struct {
 	FederatedLearningScore float64 `json:"federated_learning_score" gorm:"type:decimal(5,2)"`
 
 	// Economic Metrics
-	TotalEarningsUSDFC     float64 `json:"total_earnings_usdfc" gorm:"type:decimal(20,8)"`
+	TotalEarnings          float64 `json:"total_earnings" gorm:"type:decimal(20,8)"`
 	AverageEarningsPerTask float64 `json:"avg_earnings_per_task" gorm:"type:decimal(10,4)"`
 	StakeAmount            float64 `json:"stake_amount" gorm:"type:decimal(20,8)"`
 
@@ -104,9 +104,9 @@ type ReputationSnapshot struct {
 	PerformanceData string `json:"performance_data" gorm:"type:text"` // JSON object
 
 	// Blockchain Storage
-	IPFSHash       string `json:"ipfs_hash" gorm:"type:varchar(255)"`        // Hash of stored data
-	FilecoinDealID string `json:"filecoin_deal_id" gorm:"type:varchar(255)"` // Filecoin storage deal
-	OnChainTxHash  string `json:"onchain_tx_hash" gorm:"type:varchar(255)"`  // Transaction recording the hash
+	IPFSHash         string `json:"ipfs_hash" gorm:"type:varchar(255)"`          // Hash of stored data
+	BlockchainDealID string `json:"blockchain_deal_id" gorm:"type:varchar(255)"` // Blockchain storage deal
+	OnChainTxHash    string `json:"onchain_tx_hash" gorm:"type:varchar(255)"`    // Transaction recording the hash
 
 	// Verification
 	DataHash   string `json:"data_hash" gorm:"type:varchar(255)"` // SHA256 of snapshot data

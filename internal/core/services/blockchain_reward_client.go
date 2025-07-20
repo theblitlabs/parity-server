@@ -22,19 +22,19 @@ const (
 	KeystoreFileName = "keystore.json"
 )
 
-type FilecoinRewardClient struct {
+type BlockchainRewardClient struct {
 	cfg *config.Config
 }
 
-func NewFilecoinRewardClient(cfg *config.Config) *FilecoinRewardClient {
-	return &FilecoinRewardClient{
+func NewBlockchainRewardClient(cfg *config.Config) *BlockchainRewardClient {
+	return &BlockchainRewardClient{
 		cfg: cfg,
 	}
 }
 
 // SetStakeWallet is deprecated - reward distribution now uses real blockchain transactions only
 
-func (c *FilecoinRewardClient) DistributeRewards(result *models.TaskResult) error {
+func (c *BlockchainRewardClient) DistributeRewards(result *models.TaskResult) error {
 	log := gologger.WithComponent("rewards").With().
 		Str("task", result.TaskID.String()).
 		Str("device", result.DeviceID).
@@ -70,9 +70,9 @@ func (c *FilecoinRewardClient) DistributeRewards(result *models.TaskResult) erro
 	}
 
 	client, err := walletsdk.NewClient(walletsdk.ClientConfig{
-		RPCURL:       c.cfg.FilecoinNetwork.RPC,
-		ChainID:      int64(c.cfg.FilecoinNetwork.ChainID),
-		TokenAddress: common.HexToAddress(c.cfg.FilecoinNetwork.TokenAddress),
+		RPCURL:       c.cfg.BlockchainNetwork.RPC,
+		ChainID:      int64(c.cfg.BlockchainNetwork.ChainID),
+		TokenAddress: common.HexToAddress(c.cfg.BlockchainNetwork.TokenAddress),
 		PrivateKey:   common.Bytes2Hex(crypto.FromECDSA(privateKey)),
 	})
 	if err != nil {
@@ -82,15 +82,15 @@ func (c *FilecoinRewardClient) DistributeRewards(result *models.TaskResult) erro
 
 	log.Debug().
 		Str("wallet", client.Address().Hex()).
-		Str("rpc", c.cfg.FilecoinNetwork.RPC).
-		Int64("chain", c.cfg.FilecoinNetwork.ChainID).
+		Str("rpc", c.cfg.BlockchainNetwork.RPC).
+		Int64("chain", c.cfg.BlockchainNetwork.ChainID).
 		Msg("Client initialized")
 
-	stakeWalletAddr := common.HexToAddress(c.cfg.FilecoinNetwork.StakeWalletAddress)
+	stakeWalletAddr := common.HexToAddress(c.cfg.BlockchainNetwork.StakeWalletAddress)
 	stakeWallet, err := walletsdk.NewStakeWallet(
 		client,
 		stakeWalletAddr,
-		common.HexToAddress(c.cfg.FilecoinNetwork.TokenAddress),
+		common.HexToAddress(c.cfg.BlockchainNetwork.TokenAddress),
 	)
 	if err != nil {
 		log.Error().Err(err).
