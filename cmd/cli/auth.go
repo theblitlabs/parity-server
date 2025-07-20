@@ -47,7 +47,10 @@ func RunAuth() {
 		},
 	}, logger)
 
-	utils.ExecuteCommand(cmd, logger)
+	if err := utils.ExecuteCommand(cmd, logger); err != nil {
+		logger.Error().Err(err).Msg("Auth command execution failed")
+		os.Exit(1)
+	}
 }
 
 func ExecuteAuth(privateKey string, configPath string) error {

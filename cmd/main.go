@@ -42,7 +42,11 @@ The default config path is ".env".`,
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		cli.RunServer()
+		if err := cli.RunServer(); err != nil {
+			log := gologger.WithComponent("main")
+			log.Error().Err(err).Msg("Server failed to run")
+			os.Exit(1)
+		}
 	},
 }
 
@@ -71,7 +75,8 @@ func init() {
 	// Load config immediately to catch any errors early
 	if _, err := configManager.GetConfig(); err != nil {
 		log := gologger.WithComponent("main")
-		log.Fatal().Err(err).Msg("Failed to load config")
+		log.Error().Err(err).Msg("Failed to load config")
+		os.Exit(1)
 	}
 
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", configPath, "Path to config file")
@@ -79,7 +84,8 @@ func init() {
 	authCmd.Flags().String("private-key", "", "Private key in hex format")
 	if err := authCmd.MarkFlagRequired("private-key"); err != nil {
 		log := gologger.WithComponent("main")
-		log.Fatal().Err(err).Msg("Error marking flag required")
+		log.Error().Err(err).Msg("Error marking flag required")
+		os.Exit(1)
 	}
 
 	rootCmd.AddCommand(serverCmd)
@@ -95,7 +101,11 @@ var serverCmd = &cobra.Command{
   # Start server with custom config
   parity-server server --config /path/to/.env`,
 	Run: func(cmd *cobra.Command, args []string) {
-		cli.RunServer()
+		if err := cli.RunServer(); err != nil {
+			log := gologger.WithComponent("main")
+			log.Error().Err(err).Msg("Server failed to run")
+			os.Exit(1)
+		}
 	},
 }
 

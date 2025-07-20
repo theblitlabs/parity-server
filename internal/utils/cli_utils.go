@@ -73,8 +73,10 @@ func CreateCommand(config CommandConfig, log zerolog.Logger) *cobra.Command {
 	return cmd
 }
 
-func ExecuteCommand(cmd *cobra.Command, log zerolog.Logger) {
+func ExecuteCommand(cmd *cobra.Command, log zerolog.Logger) error {
 	if err := cmd.Execute(); err != nil {
-		log.Fatal().Err(err).Msg("Command execution failed")
+		log.Error().Err(err).Msg("Command execution failed")
+		return err
 	}
+	return nil
 }
