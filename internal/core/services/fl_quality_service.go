@@ -503,33 +503,43 @@ func (s *FLQualityService) checkQualityViolations(ctx context.Context, metrics *
 
 	// Check violations and create alerts
 	if metrics.OverallQualityScore < thresholds["min_quality_score"] {
-		s.CreateQualityAlert(ctx, "performance", "high", "participant", metrics.RunnerID,
+		if err := s.CreateQualityAlert(ctx, "performance", "high", "participant", metrics.RunnerID,
 			fmt.Sprintf("Participant quality score %0.1f below threshold %0.1f",
-				metrics.OverallQualityScore, thresholds["min_quality_score"]), metrics)
+				metrics.OverallQualityScore, thresholds["min_quality_score"]), metrics); err != nil {
+			return fmt.Errorf("failed to create quality alert: %w", err)
+		}
 	}
 
 	if metrics.ErrorRate > thresholds["max_error_rate"] {
-		s.CreateQualityAlert(ctx, "reliability", "medium", "participant", metrics.RunnerID,
+		if err := s.CreateQualityAlert(ctx, "reliability", "medium", "participant", metrics.RunnerID,
 			fmt.Sprintf("Error rate %0.1f%% exceeds threshold %0.1f%%",
-				metrics.ErrorRate, thresholds["max_error_rate"]), metrics)
+				metrics.ErrorRate, thresholds["max_error_rate"]), metrics); err != nil {
+			return fmt.Errorf("failed to create quality alert: %w", err)
+		}
 	}
 
 	if metrics.UptimePercentage < thresholds["min_uptime"] {
-		s.CreateQualityAlert(ctx, "reliability", "high", "participant", metrics.RunnerID,
+		if err := s.CreateQualityAlert(ctx, "reliability", "high", "participant", metrics.RunnerID,
 			fmt.Sprintf("Uptime %0.1f%% below threshold %0.1f%%",
-				metrics.UptimePercentage, thresholds["min_uptime"]), metrics)
+				metrics.UptimePercentage, thresholds["min_uptime"]), metrics); err != nil {
+			return fmt.Errorf("failed to create quality alert: %w", err)
+		}
 	}
 
 	if metrics.AverageLatency > thresholds["max_latency"] {
-		s.CreateQualityAlert(ctx, "performance", "medium", "participant", metrics.RunnerID,
+		if err := s.CreateQualityAlert(ctx, "performance", "medium", "participant", metrics.RunnerID,
 			fmt.Sprintf("Average latency %0.1fms exceeds threshold %0.1fms",
-				metrics.AverageLatency, thresholds["max_latency"]), metrics)
+				metrics.AverageLatency, thresholds["max_latency"]), metrics); err != nil {
+			return fmt.Errorf("failed to create quality alert: %w", err)
+		}
 	}
 
 	if metrics.TaskCompletionRate < thresholds["min_completion_rate"] {
-		s.CreateQualityAlert(ctx, "performance", "critical", "participant", metrics.RunnerID,
+		if err := s.CreateQualityAlert(ctx, "performance", "critical", "participant", metrics.RunnerID,
 			fmt.Sprintf("Task completion rate %0.1f%% below threshold %0.1f%%",
-				metrics.TaskCompletionRate, thresholds["min_completion_rate"]), metrics)
+				metrics.TaskCompletionRate, thresholds["min_completion_rate"]), metrics); err != nil {
+			return fmt.Errorf("failed to create quality alert: %w", err)
+		}
 	}
 
 	return nil

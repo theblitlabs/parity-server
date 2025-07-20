@@ -154,7 +154,7 @@ func (r *ReputationRepository) GetAllLeaderboards(ctx context.Context) ([]*model
 
 // Analytics
 func (r *ReputationRepository) GetReputationStats(ctx context.Context) (map[string]interface{}, error) {
-	var stats map[string]interface{} = make(map[string]interface{})
+	stats := make(map[string]interface{})
 
 	// Total runners
 	var totalRunners int64

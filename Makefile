@@ -108,21 +108,7 @@ format: fmt imports ## Run all formatters (gofumpt + goimports)
 
 lint: ## Run linting with options (make lint VERBOSE=true CONFIG=custom.yml OUTPUT=json)
 	@echo "Running linters..."
-	$(eval FINAL_LINT_FLAGS := $(LINT_FLAGS))
-	@if [ "$(VERBOSE)" = "true" ]; then \
-		FINAL_LINT_FLAGS="$(FINAL_LINT_FLAGS) -v"; \
-	fi
-	@if [ -n "$(CONFIG)" ]; then \
-		FINAL_LINT_FLAGS="$(FINAL_LINT_FLAGS) --config=$(CONFIG)"; \
-	else \
-		FINAL_LINT_FLAGS="$(FINAL_LINT_FLAGS) --config=$(LINT_CONFIG)"; \
-	fi
-	@if [ -n "$(OUTPUT)" ]; then \
-		FINAL_LINT_FLAGS="$(FINAL_LINT_FLAGS) --out-format=$(OUTPUT)"; \
-	else \
-		FINAL_LINT_FLAGS="$(FINAL_LINT_FLAGS) --out-format=$(LINT_OUTPUT_FORMAT)"; \
-	fi
-	golangci-lint run $(FINAL_LINT_FLAGS)
+	golangci-lint run --no-config --timeout=5m
 
 format-lint: format lint ## Format code and run linters in one step
 

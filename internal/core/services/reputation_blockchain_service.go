@@ -109,7 +109,11 @@ func (s *ReputationBlockchainService) RetrieveReputationData(ctx context.Context
 		log.Error().Err(err).Str("ipfs_hash", ipfsHash).Msg("Failed to retrieve data from IPFS")
 		return nil, fmt.Errorf("failed to retrieve data from IPFS: %w", err)
 	}
-	defer reader.Close()
+	defer func() {
+		if closeErr := reader.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("Failed to close IPFS reader")
+		}
+	}()
 
 	var reputationData interface{}
 	if err := json.NewDecoder(reader).Decode(&reputationData); err != nil {

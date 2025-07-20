@@ -16,6 +16,8 @@ func VerifyPortAvailable(host string, port string) error {
 	if err != nil {
 		return fmt.Errorf("port %s is not available: %w", port, err)
 	}
-	ln.Close()
+	if closeErr := ln.Close(); closeErr != nil {
+		return fmt.Errorf("failed to close listener: %w", closeErr)
+	}
 	return nil
 }

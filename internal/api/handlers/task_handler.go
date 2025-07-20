@@ -116,7 +116,11 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open Docker image file"})
 				return
 			}
-			defer f.Close()
+			defer func() {
+				if closeErr := f.Close(); closeErr != nil {
+					log.Error().Err(closeErr).Msg("Failed to close Docker image file")
+				}
+			}()
 
 			dockerImage, err = io.ReadAll(f)
 			if err != nil {

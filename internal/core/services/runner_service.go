@@ -304,7 +304,11 @@ func (s *RunnerService) ForwardPromptToRunner(ctx context.Context, runnerID stri
 		s.cleanupFailedTask(ctx, task.ID.String(), runnerID, fmt.Sprintf("Webhook delivery failed: %v", err))
 		return fmt.Errorf("failed to send request to runner webhook: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("Failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Error().

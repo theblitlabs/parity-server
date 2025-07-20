@@ -245,7 +245,11 @@ func (h *RunnerHandler) NotifyRunnerOfTasks(runnerID string, tasks []*coremodels
 			Msg("Failed to notify runner, will be handled on next heartbeat")
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("Failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
