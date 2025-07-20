@@ -263,7 +263,8 @@ func (s *FLQualityService) calculateParticipantPerformance(ctx context.Context, 
 	TaskCompletionRate  float64
 	ModelQualityScore   float64
 	DataQualityScore    float64
-}, error) {
+}, error,
+) {
 	// Get participant's rounds for this session
 	rounds, err := s.flRoundRepo.GetBySession(ctx, sessionID)
 	if err != nil {
@@ -315,7 +316,8 @@ func (s *FLQualityService) calculateParticipantReliability() (*struct {
 	UptimePercentage     float64
 	HeartbeatConsistency float64
 	ErrorRate            float64
-}, error) {
+}, error,
+) {
 	// This would calculate based on heartbeat history and task failure rates
 	// For now, returning sample values
 	return &struct {
@@ -333,7 +335,8 @@ func (s *FLQualityService) calculateNetworkQuality() (*struct {
 	AverageLatency       float64
 	BandwidthUtilization float64
 	ConnectionStability  float64
-}, error) {
+}, error,
+) {
 	// This would calculate based on network performance metrics
 	return &struct {
 		AverageLatency       float64
@@ -350,7 +353,8 @@ func (s *FLQualityService) calculateResourceEfficiency() (*struct {
 	CPUEfficiency      float64
 	MemoryEfficiency   float64
 	StorageUtilization float64
-}, error) {
+}, error,
+) {
 	// This would calculate based on resource utilization metrics
 	return &struct {
 		CPUEfficiency      float64
@@ -367,7 +371,8 @@ func (s *FLQualityService) calculateConvergenceQuality(ctx context.Context, sess
 	ConvergenceRate     float64
 	ModelStability      float64
 	AccuracyImprovement float64
-}, error) {
+}, error,
+) {
 	rounds, err := s.flRoundRepo.GetBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -403,7 +408,8 @@ func (s *FLQualityService) calculateSessionParticipantQuality() (*struct {
 	ParticipantRetention      float64
 	AverageParticipantQuality float64
 	ParticipantConsistency    float64
-}, error) {
+}, error,
+) {
 	// Calculate participant-related quality metrics
 	return &struct {
 		ParticipantRetention      float64
@@ -420,7 +426,8 @@ func (s *FLQualityService) calculateDataQuality(session *models.FederatedLearnin
 	DataDistribution          string
 	DataIntegrity             float64
 	PartitioningEffectiveness float64
-}, error) {
+}, error,
+) {
 	// Analyze data quality based on partitioning strategy and results
 	return &struct {
 		DataDistribution          string
@@ -438,7 +445,8 @@ func (s *FLQualityService) calculateInfrastructureQuality() (*struct {
 	NetworkEfficiency     float64
 	ResourceUtilization   float64
 	InfrastructureQuality float64
-}, error) {
+}, error,
+) {
 	// Calculate infrastructure-related metrics
 	return &struct {
 		SystemLatency         float64
@@ -457,7 +465,8 @@ func (s *FLQualityService) calculateSecurityMetrics(session *models.FederatedLea
 	PrivacyCompliance     float64
 	SecurityScore         float64
 	AnomalyDetectionScore float64
-}, error) {
+}, error,
+) {
 	// Calculate security and privacy metrics
 	privacyScore := 95.0
 	if session.Config.PrivacyConfig.DifferentialPrivacy {

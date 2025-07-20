@@ -32,7 +32,6 @@ func (r *BillingRepository) GetAggregatedMetrics(ctx context.Context, clientID s
 		Select("COUNT(*) as total_requests, SUM(total_tokens) as total_tokens, AVG(inference_time_ms) as avg_inference_time").
 		Where("client_id = ?", clientID).
 		Scan(&result).Error
-
 	if err != nil {
 		return nil, err
 	}
