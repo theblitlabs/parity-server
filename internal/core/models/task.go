@@ -55,9 +55,6 @@ func (c *TaskConfig) Validate(taskType TaskType) error {
 		if c.ImageName == "" {
 			return errors.New("image name is required for Docker tasks")
 		}
-		if c.DockerImageURL == "" && c.FileURL == "" {
-			return errors.New("either docker image URL or file URL is required for Docker tasks")
-		}
 	case TaskTypeCommand:
 		// Command can be empty for both Docker and Command tasks
 	case TaskTypeLLM:

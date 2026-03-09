@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -137,12 +138,26 @@ func (h *RunnerHandler) RunnerHeartbeat(c *gin.Context) {
 }
 
 func (h *RunnerHandler) ListAvailableTasks(c *gin.Context) {
+	deviceID := c.GetHeader("X-Device-ID")
+	if deviceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
+		return
+	}
+
 	tasks, err := h.taskService.ListAvailableTasks(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, tasks)
+
+	visibleTasks := make([]*coremodels.Task, 0, len(tasks))
+	for _, task := range tasks {
+		if task.RunnerID == "" || task.RunnerID == deviceID {
+			visibleTasks = append(visibleTasks, task)
+		}
+	}
+
+	c.JSON(http.StatusOK, visibleTasks)
 }
 
 func (h *RunnerHandler) StartTask(c *gin.Context) {
@@ -159,7 +174,11 @@ func (h *RunnerHandler) StartTask(c *gin.Context) {
 	}
 
 	if err := h.taskService.AssignTaskToRunner(c.Request.Context(), taskID, deviceID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		status := http.StatusInternalServerError
+		if errors.Is(err, services.ErrTaskUnavailable) || errors.Is(err, services.ErrRunnerUnavailable) {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -184,12 +203,29 @@ func (h *RunnerHandler) CompleteTask(c *gin.Context) {
 		return
 	}
 
+	deviceID := c.GetHeader("X-Device-ID")
+	if deviceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
+		return
+	}
+
+	task, err := h.taskService.GetTask(c.Request.Context(), taskID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if task.RunnerID != "" && task.RunnerID != deviceID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "task is assigned to a different runner"})
+		return
+	}
+
 	if err := h.taskService.CompleteTask(c.Request.Context(), taskID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	task, err := h.taskService.GetTask(c.Request.Context(), taskID)
+	task, err = h.taskService.GetTask(c.Request.Context(), taskID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,6 +10,11 @@ import (
 	"github.com/theblitlabs/gologger"
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/core/ports"
+)
+
+var (
+	ErrPromptRunnerMismatch = errors.New("prompt is assigned to a different runner")
+	ErrPromptTerminalState  = errors.New("prompt is already in a terminal state")
 )
 
 type LLMService struct {
@@ -80,13 +86,33 @@ func (s *LLMService) SubmitPrompt(ctx context.Context, clientID, prompt, modelNa
 	return promptReq, nil
 }
 
-func (s *LLMService) CompletePrompt(ctx context.Context, promptID uuid.UUID, response string, promptTokens, responseTokens int, inferenceTime int64) error {
+func (s *LLMService) CompletePrompt(ctx context.Context, promptID uuid.UUID, runnerID, response string, promptTokens, responseTokens int, inferenceTime int64) error {
 	log := gologger.WithComponent("llm_service")
 
 	promptReq, err := s.promptRepo.GetByID(ctx, promptID)
 	if err != nil {
 		log.Error().Err(err).Str("prompt_id", promptID.String()).Msg("Failed to get prompt request")
 		return fmt.Errorf("failed to get prompt request: %w", err)
+	}
+
+	if runnerID == "" {
+		return fmt.Errorf("runner ID is required")
+	}
+
+	if promptReq.RunnerID != "" && promptReq.RunnerID != runnerID {
+		return ErrPromptRunnerMismatch
+	}
+
+	if promptReq.Status == models.PromptStatusCompleted {
+		log.Info().
+			Str("prompt_id", promptID.String()).
+			Str("runner_id", runnerID).
+			Msg("Ignoring duplicate prompt completion")
+		return nil
+	}
+
+	if promptReq.Status == models.PromptStatusFailed {
+		return ErrPromptTerminalState
 	}
 
 	now := time.Now()

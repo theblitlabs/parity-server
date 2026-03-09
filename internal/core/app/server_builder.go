@@ -226,11 +226,15 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 	}
 
 	rewardCalculator := services.NewRewardCalculator()
-	rewardClient := services.NewBlockchainRewardClient(sb.config)
 
 	sb.runnerService = services.NewRunnerService(sb.runnerRepo)
 	sb.taskService = services.NewTaskService(sb.taskRepo, rewardCalculator.(*services.RewardCalculator), sb.runnerService)
-	sb.taskService.SetRewardClient(rewardClient)
+	if shouldEnableRewardDistribution(sb.config) {
+		sb.taskService.SetRewardClient(services.NewBlockchainRewardClient(sb.config))
+	} else {
+		log := gologger.WithComponent("server_builder")
+		log.Info().Msg("Reward distribution disabled by configuration")
+	}
 	sb.runnerService.SetTaskService(sb.taskService)
 
 	sb.webhookService = services.NewWebhookService(sb.taskService)
@@ -300,6 +304,34 @@ func (sb *ServerBuilder) InitServices() *ServerBuilder {
 	)
 
 	return sb
+}
+
+func shouldEnableRewardDistribution(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+
+	if cfg.Reputation.MinimumStake <= 0 {
+		return false
+	}
+
+	if cfg.BlockchainNetwork.RPC == "" {
+		return false
+	}
+
+	if cfg.BlockchainNetwork.TokenAddress == "" || cfg.BlockchainNetwork.StakeWalletAddress == "" {
+		return false
+	}
+
+	if cfg.BlockchainNetwork.TokenAddress == common.HexToAddress("").Hex() {
+		return false
+	}
+
+	if cfg.BlockchainNetwork.StakeWalletAddress == common.HexToAddress("").Hex() {
+		return false
+	}
+
+	return true
 }
 
 func (sb *ServerBuilder) InitHeartbeatService() *ServerBuilder {

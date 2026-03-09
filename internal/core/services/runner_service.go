@@ -89,6 +89,10 @@ func (s *RunnerService) triggerTaskMonitor() {
 	}
 }
 
+func (s *RunnerService) TriggerTaskMonitor() {
+	s.triggerTaskMonitor()
+}
+
 func (s *RunnerService) SetHeartbeatTimeout(timeout time.Duration) {
 	s.heartbeatTimeout = timeout
 }
