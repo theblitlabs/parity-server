@@ -840,56 +840,6 @@ func (s *TaskService) countAssignedRunners(task *models.Task, runners []*models.
 	return assignedCount
 }
 
-func sortRunnersByLoad(runners []*models.Runner) {
-	sort.Slice(runners, func(i, j int) bool {
-		return true // Simple round-robin for now
-	})
-}
-
-func isRunnerCompatibleWithTask(runner *models.Runner) bool {
-	log := gologger.WithComponent("task_service")
-
-	if runner.Status != models.RunnerStatusOnline {
-		log.Info().
-			Str("runner_id", runner.DeviceID).
-			Str("status", string(runner.Status)).
-			Msg("Runner not compatible: not online")
-		return false
-	}
-
-	if runner.TaskID != nil {
-		log.Info().
-			Str("runner_id", runner.DeviceID).
-			Interface("task_id", runner.TaskID).
-			Msg("Runner not compatible: has task assigned")
-		return false
-	}
-
-	log.Info().
-		Str("runner_id", runner.DeviceID).
-		Msg("Runner is compatible with task")
-	return true
-}
-
-func (s *TaskService) assignTaskToRunners(ctx context.Context, task *models.Task, availableRunners []*models.Runner, targetAssignments int) (int, []string, error) {
-	assignedCount := 0
-	assignedRunners := make([]string, 0, targetAssignments)
-
-	for i := 0; i < len(availableRunners) && assignedCount < targetAssignments; i++ {
-		runner := availableRunners[i]
-		if isRunnerCompatibleWithTask(runner) {
-			if err := s.assignTaskToRunner(ctx, task, runner); err != nil {
-				continue
-			}
-
-			assignedCount++
-			assignedRunners = append(assignedRunners, runner.DeviceID)
-		}
-	}
-
-	return assignedCount, assignedRunners, nil
-}
-
 func (s *TaskService) assignTaskToRunner(ctx context.Context, task *models.Task, runner *models.Runner) error {
 	log := gologger.WithComponent("task_service")
 	runnerAssignKey := "runner_assign_" + runner.DeviceID
