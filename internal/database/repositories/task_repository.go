@@ -2,9 +2,7 @@ package repositories
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/theblitlabs/gologger"
@@ -37,9 +35,14 @@ func (r *TaskRepository) Create(ctx context.Context, task *models.Task) error {
 		Config:          task.Config,
 		Status:          task.Status,
 		Environment:     task.Environment,
+		Reward:          task.Reward,
+		RunnerID:        task.RunnerID,
 		Nonce:           task.Nonce,
+		ImageHash:       task.ImageHash,
+		CommandHash:     task.CommandHash,
 		CreatedAt:       task.CreatedAt,
 		UpdatedAt:       task.UpdatedAt,
+		CompletedAt:     task.CompletedAt,
 	}
 
 	result := r.db.WithContext(ctx).Create(&dbTask)
@@ -64,18 +67,16 @@ func (r *TaskRepository) Get(ctx context.Context, id uuid.UUID) (*models.Task, e
 		Description:     dbTask.Description,
 		Type:            dbTask.Type,
 		Status:          dbTask.Status,
+		Config:          dbTask.Config,
+		Environment:     dbTask.Environment,
+		Reward:          dbTask.Reward,
+		RunnerID:        dbTask.RunnerID,
 		Nonce:           dbTask.Nonce,
+		ImageHash:       dbTask.ImageHash,
+		CommandHash:     dbTask.CommandHash,
 		CreatedAt:       dbTask.CreatedAt,
 		UpdatedAt:       dbTask.UpdatedAt,
 		CompletedAt:     dbTask.CompletedAt,
-	}
-
-	if err := json.Unmarshal(dbTask.Config, &task.Config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-
-	if dbTask.Environment != nil {
-		task.Environment = dbTask.Environment
 	}
 
 	return task, nil
@@ -86,6 +87,12 @@ func (r *TaskRepository) Update(ctx context.Context, task *models.Task) error {
 		"status":       task.Status,
 		"updated_at":   task.UpdatedAt,
 		"config":       task.Config,
+		"environment":  task.Environment,
+		"reward":       task.Reward,
+		"runner_id":    task.RunnerID,
+		"nonce":        task.Nonce,
+		"image_hash":   task.ImageHash,
+		"command_hash": task.CommandHash,
 		"completed_at": task.CompletedAt,
 	}
 
@@ -118,18 +125,16 @@ func (r *TaskRepository) ListByStatus(ctx context.Context, status models.TaskSta
 			Description:     dbTask.Description,
 			Type:            dbTask.Type,
 			Status:          dbTask.Status,
+			Config:          dbTask.Config,
+			Environment:     dbTask.Environment,
+			Reward:          dbTask.Reward,
+			RunnerID:        dbTask.RunnerID,
 			CreatedAt:       dbTask.CreatedAt,
 			UpdatedAt:       dbTask.UpdatedAt,
 			CompletedAt:     dbTask.CompletedAt,
 			Nonce:           dbTask.Nonce,
-		}
-
-		if err := json.Unmarshal(dbTask.Config, &tasks[i].Config); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-		}
-
-		if dbTask.Environment != nil {
-			tasks[i].Environment = dbTask.Environment
+			ImageHash:       dbTask.ImageHash,
+			CommandHash:     dbTask.CommandHash,
 		}
 	}
 
@@ -153,18 +158,16 @@ func (r *TaskRepository) List(ctx context.Context, limit, offset int) ([]*models
 			Description:     dbTask.Description,
 			Type:            dbTask.Type,
 			Status:          dbTask.Status,
+			Config:          dbTask.Config,
+			Environment:     dbTask.Environment,
+			Reward:          dbTask.Reward,
+			RunnerID:        dbTask.RunnerID,
 			Nonce:           dbTask.Nonce,
+			ImageHash:       dbTask.ImageHash,
+			CommandHash:     dbTask.CommandHash,
 			CreatedAt:       dbTask.CreatedAt,
 			UpdatedAt:       dbTask.UpdatedAt,
 			CompletedAt:     dbTask.CompletedAt,
-		}
-
-		if err := json.Unmarshal(dbTask.Config, &tasks[i].Config); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-		}
-
-		if dbTask.Environment != nil {
-			tasks[i].Environment = dbTask.Environment
 		}
 	}
 
@@ -188,18 +191,16 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]models.Task, error) {
 			Description:     dbTask.Description,
 			Type:            dbTask.Type,
 			Status:          dbTask.Status,
+			Config:          dbTask.Config,
+			Environment:     dbTask.Environment,
+			Reward:          dbTask.Reward,
+			RunnerID:        dbTask.RunnerID,
 			Nonce:           dbTask.Nonce,
+			ImageHash:       dbTask.ImageHash,
+			CommandHash:     dbTask.CommandHash,
 			CreatedAt:       dbTask.CreatedAt,
 			UpdatedAt:       dbTask.UpdatedAt,
 			CompletedAt:     dbTask.CompletedAt,
-		}
-
-		if err := json.Unmarshal(dbTask.Config, &tasks[i].Config); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-		}
-
-		if dbTask.Environment != nil {
-			tasks[i].Environment = dbTask.Environment
 		}
 	}
 
@@ -213,25 +214,42 @@ func (r *TaskRepository) SaveTaskResult(ctx context.Context, result *models.Task
 		Msg("Saving task result")
 
 	dbResult := &models.TaskResult{
-		ID:              result.ID,
-		TaskID:          result.TaskID,
-		DeviceID:        result.DeviceID,
-		DeviceIDHash:    result.DeviceIDHash,
-		RunnerAddress:   result.RunnerAddress,
-		CreatorAddress:  result.CreatorAddress,
-		Output:          result.Output,
-		Error:           result.Error,
-		ExitCode:        result.ExitCode,
-		ExecutionTime:   result.ExecutionTime,
-		CreatedAt:       result.CreatedAt,
-		CreatorDeviceID: result.CreatorDeviceID,
-		SolverDeviceID:  result.SolverDeviceID,
-		Reward:          result.Reward,
-		CPUSeconds:      result.CPUSeconds,
-		EstimatedCycles: result.EstimatedCycles,
-		MemoryGBHours:   result.MemoryGBHours,
-		StorageGB:       result.StorageGB,
-		NetworkDataGB:   result.NetworkDataGB,
+		ID:                  result.ID,
+		TaskID:              result.TaskID,
+		DeviceID:            result.DeviceID,
+		DeviceIDHash:        result.DeviceIDHash,
+		RunnerAddress:       result.RunnerAddress,
+		CreatorAddress:      result.CreatorAddress,
+		Output:              result.Output,
+		Error:               result.Error,
+		ExitCode:            result.ExitCode,
+		ExecutionTime:       result.ExecutionTime,
+		ResultHash:          result.ResultHash,
+		ImageHashVerified:   result.ImageHashVerified,
+		CommandHashVerified: result.CommandHashVerified,
+		VerificationStatus:  result.VerificationStatus,
+		CreatedAt:           result.CreatedAt,
+		CreatorDeviceID:     result.CreatorDeviceID,
+		SolverDeviceID:      result.SolverDeviceID,
+		Reward:              result.Reward,
+		CPUSeconds:          result.CPUSeconds,
+		EstimatedCycles:     result.EstimatedCycles,
+		MemoryGBHours:       result.MemoryGBHours,
+		StorageGB:           result.StorageGB,
+		NetworkDataGB:       result.NetworkDataGB,
+	}
+
+	var existing models.TaskResult
+	err := r.db.WithContext(ctx).Where("task_id = ?", result.TaskID).First(&existing).Error
+	if err == nil {
+		dbResult.ID = existing.ID
+		if dbResult.CreatedAt.IsZero() {
+			dbResult.CreatedAt = existing.CreatedAt
+		}
+		return r.db.WithContext(ctx).Save(dbResult).Error
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
 	}
 
 	return r.db.WithContext(ctx).Create(dbResult).Error
@@ -248,25 +266,29 @@ func (r *TaskRepository) GetTaskResult(ctx context.Context, taskID uuid.UUID) (*
 	}
 
 	taskResult := &models.TaskResult{
-		ID:              dbResult.ID,
-		TaskID:          dbResult.TaskID,
-		DeviceID:        dbResult.DeviceID,
-		DeviceIDHash:    dbResult.DeviceIDHash,
-		RunnerAddress:   dbResult.RunnerAddress,
-		CreatorAddress:  dbResult.CreatorAddress,
-		Output:          dbResult.Output,
-		Error:           dbResult.Error,
-		ExitCode:        dbResult.ExitCode,
-		ExecutionTime:   dbResult.ExecutionTime,
-		CreatedAt:       dbResult.CreatedAt,
-		CreatorDeviceID: dbResult.CreatorDeviceID,
-		SolverDeviceID:  dbResult.SolverDeviceID,
-		Reward:          dbResult.Reward,
-		CPUSeconds:      dbResult.CPUSeconds,
-		EstimatedCycles: dbResult.EstimatedCycles,
-		MemoryGBHours:   dbResult.MemoryGBHours,
-		StorageGB:       dbResult.StorageGB,
-		NetworkDataGB:   dbResult.NetworkDataGB,
+		ID:                  dbResult.ID,
+		TaskID:              dbResult.TaskID,
+		DeviceID:            dbResult.DeviceID,
+		DeviceIDHash:        dbResult.DeviceIDHash,
+		RunnerAddress:       dbResult.RunnerAddress,
+		CreatorAddress:      dbResult.CreatorAddress,
+		Output:              dbResult.Output,
+		Error:               dbResult.Error,
+		ExitCode:            dbResult.ExitCode,
+		ExecutionTime:       dbResult.ExecutionTime,
+		ResultHash:          dbResult.ResultHash,
+		ImageHashVerified:   dbResult.ImageHashVerified,
+		CommandHashVerified: dbResult.CommandHashVerified,
+		VerificationStatus:  dbResult.VerificationStatus,
+		CreatedAt:           dbResult.CreatedAt,
+		CreatorDeviceID:     dbResult.CreatorDeviceID,
+		SolverDeviceID:      dbResult.SolverDeviceID,
+		Reward:              dbResult.Reward,
+		CPUSeconds:          dbResult.CPUSeconds,
+		EstimatedCycles:     dbResult.EstimatedCycles,
+		MemoryGBHours:       dbResult.MemoryGBHours,
+		StorageGB:           dbResult.StorageGB,
+		NetworkDataGB:       dbResult.NetworkDataGB,
 	}
 
 	return taskResult, nil

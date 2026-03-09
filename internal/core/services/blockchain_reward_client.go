@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -102,6 +103,10 @@ func (c *BlockchainRewardClient) DistributeRewards(result *models.TaskResult) er
 
 	stakeInfo, err := stakeWallet.GetStakeInfo(result.DeviceID)
 	if err != nil {
+		if strings.Contains(err.Error(), "no contract code") {
+			log.Warn().Err(err).Msg("Reward distribution skipped because the stake contract is not deployed at the configured address")
+			return nil
+		}
 		log.Error().Err(err).Msg("Stake info check failed")
 		return nil
 	}

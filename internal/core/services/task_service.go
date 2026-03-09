@@ -18,11 +18,14 @@ import (
 	"github.com/theblitlabs/parity-server/internal/core/models"
 	"github.com/theblitlabs/parity-server/internal/core/ports"
 	"github.com/theblitlabs/parity-server/internal/database/repositories"
+	"github.com/theblitlabs/parity-server/internal/utils"
 )
 
 var (
-	ErrInvalidTask  = errors.New("invalid task data")
-	ErrTaskNotFound = repositories.ErrTaskNotFound
+	ErrInvalidTask       = errors.New("invalid task data")
+	ErrTaskNotFound      = repositories.ErrTaskNotFound
+	ErrTaskUnavailable   = errors.New("task unavailable")
+	ErrRunnerUnavailable = errors.New("runner unavailable")
 )
 
 type TaskRepository interface {
@@ -49,8 +52,9 @@ type TaskService struct {
 }
 
 const (
-	MinRunnersForTask = 1
-	MaxRunnersForTask = 5
+	MinRunnersForTask        = 1
+	MaxRunnersForTask        = 5
+	pendingAssignmentTimeout = 45 * time.Second
 )
 
 func NewTaskService(repo TaskRepository, rewardCalculator ports.RewardCalculator, runnerService *RunnerService) *TaskService {
@@ -87,29 +91,9 @@ func (s *TaskService) CreateTask(ctx context.Context, task *models.Task) error {
 		return err
 	}
 
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		availableRunners, err := s.getAvailableRunners(ctx)
-		if err != nil {
-			log := gologger.WithComponent("task_service")
-			log.Error().Err(err).
-				Str("task_id", task.ID.String()).
-				Msg("Failed to get available runners for new task")
-			return
-		}
-
-		if len(availableRunners) >= MinRunnersForTask {
-			sortRunnersByLoad(availableRunners)
-			if _, _, err := s.assignTaskToRunners(ctx, task, availableRunners, MinRunnersForTask); err != nil {
-				log := gologger.WithComponent("task_service")
-				log.Error().Err(err).
-					Str("task_id", task.ID.String()).
-					Msg("Failed to assign new task to available runners")
-			}
-		}
-	}()
+	if s.runnerService != nil {
+		s.runnerService.TriggerTaskMonitor()
+	}
 
 	return nil
 }
@@ -175,6 +159,15 @@ func (s *TaskService) AssignTaskToRunner(ctx context.Context, taskID string, dev
 		return fmt.Errorf("invalid runner ID: %w", err)
 	}
 
+	if runner.TaskID != nil && *runner.TaskID != task.ID {
+		log.Warn().
+			Str("task_id", taskID).
+			Str("runner_id", deviceID).
+			Str("assigned_task_id", runner.TaskID.String()).
+			Msg("Runner is already processing another task")
+		return ErrRunnerUnavailable
+	}
+
 	if runner.TaskID != nil && *runner.TaskID == task.ID {
 		log.Info().
 			Str("task_id", taskID).
@@ -188,7 +181,7 @@ func (s *TaskService) AssignTaskToRunner(ctx context.Context, taskID string, dev
 			Str("task_id", taskID).
 			Str("runner_id", deviceID).
 			Msg("Task is already running, possibly assigned to another runner")
-		return errors.New("task unavailable")
+		return ErrTaskUnavailable
 	}
 
 	if task.Status == models.TaskStatusCompleted {
@@ -196,11 +189,11 @@ func (s *TaskService) AssignTaskToRunner(ctx context.Context, taskID string, dev
 			Str("task_id", taskID).
 			Str("runner_id", deviceID).
 			Msg("Task is already completed")
-		return errors.New("task unavailable")
+		return ErrTaskUnavailable
 	}
 
 	if task.Status != models.TaskStatusPending {
-		return errors.New("task unavailable")
+		return ErrTaskUnavailable
 	}
 
 	if task.Type == models.TaskTypeDocker && (task.Environment == nil || task.Environment.Type != "docker") {
@@ -303,6 +296,8 @@ func (s *TaskService) CompleteTask(ctx context.Context, id string) error {
 
 	task.Status = models.TaskStatusCompleted
 	task.UpdatedAt = time.Now()
+	now := time.Now()
+	task.CompletedAt = &now
 
 	if err := s.repo.Update(ctx, task); err != nil {
 		log.Error().Err(err).Str("task_id", id).Msg("Failed to update task status")
@@ -424,6 +419,11 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 	if result.SolverDeviceID == "" {
 		result.SolverDeviceID = runnerID
 	}
+	if result.ResultHash == "" {
+		result.ResultHash = utils.ComputeResultHash(result.Output, result.Error, result.ExitCode)
+	}
+
+	result.VerificationStatus = determineVerificationStatus(task, result)
 
 	if runnerID != "" {
 		log.Info().
@@ -482,8 +482,9 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		NetworkDataGB:   result.NetworkDataGB,
 	}
 
-	reward := s.rewardCalculator.CalculateReward(metrics)
-	result.Reward = reward
+	if s.rewardCalculator != nil {
+		result.Reward = s.rewardCalculator.CalculateReward(metrics)
+	}
 
 	if err := s.repo.SaveTaskResult(ctx, result); err != nil {
 		log.Error().Err(err).
@@ -492,8 +493,21 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 		return err
 	}
 
-	if task.Status != models.TaskStatusCompleted {
-		task.Status = models.TaskStatusCompleted
+	targetStatus := models.TaskStatusCompleted
+	if result.VerificationStatus == "failed" {
+		targetStatus = models.TaskStatusNotVerified
+		log.Warn().
+			Str("task_id", result.TaskID.String()).
+			Str("runner_id", runnerID).
+			Str("image_hash_expected", task.ImageHash).
+			Str("image_hash_verified", result.ImageHashVerified).
+			Str("command_hash_expected", task.CommandHash).
+			Str("command_hash_verified", result.CommandHashVerified).
+			Msg("Task result hashes did not verify")
+	}
+
+	if task.Status != targetStatus {
+		task.Status = targetStatus
 		task.UpdatedAt = time.Now()
 		task.RunnerID = runnerID // Preserve the RunnerID
 
@@ -555,6 +569,22 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 	return nil
 }
 
+func determineVerificationStatus(task *models.Task, result *models.TaskResult) string {
+	if task == nil || result == nil {
+		return "pending"
+	}
+
+	if task.ImageHash == "" && task.CommandHash == "" {
+		return "not_requested"
+	}
+
+	if utils.VerifyTaskHashes(task, result.ImageHashVerified, result.CommandHashVerified) {
+		return "verified"
+	}
+
+	return "failed"
+}
+
 func (s *TaskService) StartMonitoring() {
 	log := gologger.WithComponent("task_service")
 	log.Info().Msg("Starting task monitoring services")
@@ -572,6 +602,9 @@ func (s *TaskService) StartMonitoring() {
 			case <-ticker.C:
 				if err := s.checkStalledTasks(); err != nil {
 					log.Error().Err(err).Msg("Failed to check stalled tasks")
+				}
+				if err := s.checkPendingAssignments(); err != nil {
+					log.Error().Err(err).Msg("Failed to check pending task assignments")
 				}
 			}
 		}
@@ -598,6 +631,33 @@ func (s *TaskService) checkStalledTasks() error {
 					Str("task_id", task.ID.String()).
 					Msg("Failed to handle stalled task")
 			}
+		}
+	}
+
+	return nil
+}
+
+func (s *TaskService) checkPendingAssignments() error {
+	log := gologger.WithComponent("task_service")
+
+	tasks, err := s.repo.ListByStatus(context.Background(), models.TaskStatusPending)
+	if err != nil {
+		return fmt.Errorf("failed to list pending tasks: %w", err)
+	}
+
+	now := time.Now()
+	for _, task := range tasks {
+		if task.RunnerID == "" {
+			continue
+		}
+		if now.Sub(task.UpdatedAt) < pendingAssignmentTimeout {
+			continue
+		}
+		if err := s.handlePendingAssignmentTimeout(task); err != nil {
+			log.Error().Err(err).
+				Str("task_id", task.ID.String()).
+				Str("runner_id", task.RunnerID).
+				Msg("Failed to reset stale pending assignment")
 		}
 	}
 
@@ -639,6 +699,48 @@ func (s *TaskService) handleStalledTask(task *models.Task) error {
 	return nil
 }
 
+func (s *TaskService) handlePendingAssignmentTimeout(task *models.Task) error {
+	log := gologger.WithComponent("task_service")
+	assignmentAge := time.Since(task.UpdatedAt)
+
+	if task.RunnerID == "" {
+		return nil
+	}
+
+	runnerID := task.RunnerID
+	runner, err := s.runnerService.GetRunner(context.Background(), runnerID)
+	if err == nil {
+		if runner.TaskID != nil && *runner.TaskID == task.ID {
+			runner.TaskID = nil
+			runner.Status = models.RunnerStatusOnline
+			if _, updateErr := s.runnerService.UpdateRunner(context.Background(), runner); updateErr != nil {
+				return fmt.Errorf("failed to clear stale runner assignment: %w", updateErr)
+			}
+		}
+	} else if !errors.Is(err, ErrRunnerNotFound) && !strings.Contains(err.Error(), "runner not found") {
+		return fmt.Errorf("failed to refresh runner during assignment timeout handling: %w", err)
+	}
+
+	task.RunnerID = ""
+	task.UpdatedAt = time.Now()
+	task.CompletedAt = nil
+	if err := s.repo.Update(context.Background(), task); err != nil {
+		return fmt.Errorf("failed to reset task assignment: %w", err)
+	}
+
+	log.Warn().
+		Str("task_id", task.ID.String()).
+		Str("runner_id", runnerID).
+		Dur("age", assignmentAge).
+		Msg("Reset stale pending task assignment")
+
+	if s.runnerService != nil {
+		s.runnerService.TriggerTaskMonitor()
+	}
+
+	return nil
+}
+
 func (s *TaskService) checkAndAssignPendingTasksToRunner(ctx context.Context, runnerID string) error {
 	log := gologger.WithComponent("task_service")
 
@@ -653,6 +755,9 @@ func (s *TaskService) checkAndAssignPendingTasksToRunner(ctx context.Context, ru
 		return fmt.Errorf("failed to get runner: %w", err)
 	}
 	if runner.Status != models.RunnerStatusOnline {
+		return nil
+	}
+	if runner.TaskID != nil {
 		return nil
 	}
 
@@ -680,6 +785,9 @@ func (s *TaskService) checkAndAssignPendingTasksToRunner(ctx context.Context, ru
 		}
 
 		if err := s.assignTaskToRunner(ctx, task, runner); err != nil {
+			if errors.Is(err, ErrRunnerUnavailable) || errors.Is(err, ErrTaskUnavailable) {
+				continue
+			}
 			log.Error().Err(err).
 				Str("task_id", task.ID.String()).
 				Str("runner_id", runnerID).
@@ -784,30 +892,84 @@ func (s *TaskService) assignTaskToRunners(ctx context.Context, task *models.Task
 
 func (s *TaskService) assignTaskToRunner(ctx context.Context, task *models.Task, runner *models.Runner) error {
 	log := gologger.WithComponent("task_service")
+	runnerAssignKey := "runner_assign_" + runner.DeviceID
+	if _, exists := s.notificationInProgress.LoadOrStore(runnerAssignKey, true); exists {
+		return ErrRunnerUnavailable
+	}
+	defer s.notificationInProgress.Delete(runnerAssignKey)
 
-	task.RunnerID = runner.DeviceID
-	task.UpdatedAt = time.Now()
+	currentRunner, err := s.runnerService.GetRunner(ctx, runner.DeviceID)
+	if err != nil {
+		return fmt.Errorf("failed to refresh runner state: %w", err)
+	}
+	if currentRunner.Status != models.RunnerStatusOnline {
+		return ErrRunnerUnavailable
+	}
+	if currentRunner.TaskID != nil {
+		if *currentRunner.TaskID == task.ID {
+			return nil
+		}
+		return ErrRunnerUnavailable
+	}
 
-	if err := s.repo.Update(ctx, task); err != nil {
+	currentTask, err := s.repo.Get(ctx, task.ID)
+	if err != nil {
+		return fmt.Errorf("failed to refresh task state: %w", err)
+	}
+	if currentTask.Status != models.TaskStatusPending {
+		return ErrTaskUnavailable
+	}
+	if currentTask.RunnerID != "" && currentTask.RunnerID != currentRunner.DeviceID {
+		return ErrTaskUnavailable
+	}
+
+	previousRunnerID := currentTask.RunnerID
+	previousNonce := currentTask.Nonce
+
+	currentTask.RunnerID = currentRunner.DeviceID
+	currentTask.Nonce = s.nonceService.GenerateNonce()
+	currentTask.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(ctx, currentTask); err != nil {
 		return fmt.Errorf("failed to update task with runner ID: %w", err)
 	}
 
-	runner.TaskID = &task.ID
-	if _, err := s.runnerService.UpdateRunner(ctx, runner); err != nil {
-		task.RunnerID = ""
-		if revertErr := s.repo.Update(ctx, task); revertErr != nil {
+	currentRunner.TaskID = &currentTask.ID
+	if _, err := s.runnerService.UpdateRunner(ctx, currentRunner); err != nil {
+		currentTask.RunnerID = previousRunnerID
+		currentTask.Nonce = previousNonce
+		currentTask.UpdatedAt = time.Now()
+		if revertErr := s.repo.Update(ctx, currentTask); revertErr != nil {
 			log.Error().Err(revertErr).
-				Str("task_id", task.ID.String()).
+				Str("task_id", currentTask.ID.String()).
 				Msg("Failed to revert task runner ID")
 		}
 		return fmt.Errorf("failed to update runner with task ID: %w", err)
 	}
 
-	if err := s.notifyRunnerAboutTask(runner, task); err != nil {
+	if err := s.notifyRunnerAboutTask(currentRunner, currentTask); err != nil {
+		currentRunner.TaskID = nil
+		if _, updateErr := s.runnerService.UpdateRunner(ctx, currentRunner); updateErr != nil {
+			log.Error().Err(updateErr).
+				Str("task_id", currentTask.ID.String()).
+				Str("runner_id", currentRunner.DeviceID).
+				Msg("Failed to revert runner assignment after notification failure")
+		}
+
+		currentTask.RunnerID = previousRunnerID
+		currentTask.Nonce = previousNonce
+		currentTask.UpdatedAt = time.Now()
+		if revertErr := s.repo.Update(ctx, currentTask); revertErr != nil {
+			log.Error().Err(revertErr).
+				Str("task_id", currentTask.ID.String()).
+				Msg("Failed to revert task assignment after notification failure")
+		}
+
 		log.Warn().Err(err).
-			Str("task_id", task.ID.String()).
-			Str("runner_id", runner.DeviceID).
+			Str("task_id", currentTask.ID.String()).
+			Str("runner_id", currentRunner.DeviceID).
 			Msg("Failed to notify runner about task")
+		return fmt.Errorf("failed to notify runner about task: %w", err)
 	}
 
 	return nil
@@ -815,18 +977,11 @@ func (s *TaskService) assignTaskToRunner(ctx context.Context, task *models.Task,
 
 func (s *TaskService) notifyRunnerAboutTask(runner *models.Runner, task *models.Task) error {
 	if runner.Webhook == "" {
-		return nil
+		return fmt.Errorf("runner has no webhook URL")
 	}
 
 	if runner.Status != models.RunnerStatusOnline {
-		return nil
-	}
-
-	nonce := s.nonceService.GenerateNonce()
-	task.Nonce = nonce
-
-	if err := s.repo.Update(context.Background(), task); err != nil {
-		return err
+		return fmt.Errorf("runner is not online")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -899,7 +1054,7 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 		log.Warn().Err(err).
 			Str("runner_id", runner.DeviceID).
 			Msg("Failed to send webhook request")
-		return nil
+		return fmt.Errorf("failed to send webhook request: %w", err)
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
@@ -914,7 +1069,7 @@ func (s *TaskService) sendWebhookNotification(ctx context.Context, runner *model
 			Str("body", string(body)).
 			Str("runner_id", runner.DeviceID).
 			Msg("Webhook notification failed")
-		return nil
+		return fmt.Errorf("webhook notification failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	return nil

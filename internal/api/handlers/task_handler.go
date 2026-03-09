@@ -30,6 +30,8 @@ type TaskHandler struct {
 	config              *config.Config
 }
 
+const defaultMaxUploadSizeMB int64 = 512
+
 func NewTaskHandler(service *services.TaskService, storageService services.StorageService, verificationService *services.VerificationService, cfg *config.Config) *TaskHandler {
 	return &TaskHandler{
 		service:             service,
@@ -85,12 +87,20 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	contentType := c.GetHeader("Content-Type")
 	var req requestmodels.CreateTaskRequest
 	var dockerImage []byte
+	maxUploadSize := h.maxUploadSizeBytes()
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadSize)
 		form, err := c.MultipartForm()
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to parse multipart form")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse multipart form"})
+			status := http.StatusBadRequest
+			message := "Failed to parse multipart form"
+			if strings.Contains(err.Error(), "request body too large") {
+				status = http.StatusRequestEntityTooLarge
+				message = fmt.Sprintf("Docker image exceeds maximum upload size of %d MB", maxUploadSize/(1024*1024))
+			}
+			c.JSON(status, gin.H{"error": message})
 			return
 		}
 
@@ -110,6 +120,13 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 
 		file, err := c.FormFile("image")
 		if err == nil {
+			if file.Size > maxUploadSize {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+					"error": fmt.Sprintf("Docker image exceeds maximum upload size of %d MB", maxUploadSize/(1024*1024)),
+				})
+				return
+			}
+
 			f, err := file.Open()
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to open Docker image file")
@@ -122,10 +139,17 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 				}
 			}()
 
-			dockerImage, err = io.ReadAll(f)
+			dockerImage, err = io.ReadAll(io.LimitReader(f, maxUploadSize+1))
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to read Docker image file")
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read Docker image file"})
+				return
+			}
+
+			if int64(len(dockerImage)) > maxUploadSize {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+					"error": fmt.Sprintf("Docker image exceeds maximum upload size of %d MB", maxUploadSize/(1024*1024)),
+				})
 				return
 			}
 
@@ -136,16 +160,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 				return
 			}
 
-			if req.Environment == nil {
-				config := map[string]interface{}{
-					"image": req.Image,
-				}
-
-				req.Environment = &models.EnvironmentConfig{
-					Type:   "docker",
-					Config: config,
-				}
-			}
+			req.Environment = ensureDockerEnvironment(req.Environment, req.Command)
 
 			taskConfig := models.TaskConfig{
 				DockerImageURL: imageURL,
@@ -168,16 +183,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 
 		if req.Image != "" {
 			req.Type = models.TaskTypeDocker
-			if req.Environment == nil {
-				config := map[string]interface{}{
-					"image": req.Image,
-				}
-
-				req.Environment = &models.EnvironmentConfig{
-					Type:   "docker",
-					Config: config,
-				}
-			}
+			req.Environment = ensureDockerEnvironment(req.Environment, req.Command)
 
 			taskConfig := models.TaskConfig{
 				ImageName: req.Image,
@@ -238,9 +244,12 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	task.Type = req.Type
 	task.Config = req.Config
 	task.Environment = req.Environment
+	task.Reward = req.Reward
 	task.CreatorDeviceID = deviceID
 	task.CreatorAddress = creatorAddress
 	task.Nonce = nonce
+	task.ImageHash = req.ImageHash
+	task.CommandHash = req.CommandHash
 
 	if err := h.checkStakeBalance(task); err != nil {
 		log.Error().Err(err).
@@ -292,6 +301,11 @@ func (h *TaskHandler) SaveTaskResult(c *gin.Context) {
 		return
 	}
 
+	if task.RunnerID != "" && task.RunnerID != deviceID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "task is assigned to a different runner"})
+		return
+	}
+
 	result.TaskID = taskUUID
 	result.DeviceID = deviceID
 	result.CreatorDeviceID = task.CreatorDeviceID
@@ -316,6 +330,13 @@ func (h *TaskHandler) SaveTaskResult(c *gin.Context) {
 func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 	log := gologger.WithComponent("task_handler")
 
+	if h.config != nil && h.config.Reputation.MinimumStake <= 0 {
+		log.Debug().
+			Str("device_id", task.CreatorDeviceID).
+			Msg("Stake validation disabled by configuration")
+		return nil
+	}
+
 	if h.stakeWallet == nil {
 		log.Error().Str("device_id", task.CreatorDeviceID).Msg("Stake wallet not initialized")
 		return fmt.Errorf("stake wallet not initialized")
@@ -338,7 +359,12 @@ func (h *TaskHandler) checkStakeBalance(task *models.Task) error {
 		return fmt.Errorf("device %s is not registered in the staking contract - please stake %s tokens first", task.CreatorDeviceID, h.getTokenSymbol())
 	}
 
-	minRequiredStake := big.NewInt(10)
+	minimumStake := 10
+	if h.config != nil && h.config.Reputation.MinimumStake > 0 {
+		minimumStake = h.config.Reputation.MinimumStake
+	}
+
+	minRequiredStake := big.NewInt(int64(minimumStake))
 	if info.Amount.Cmp(minRequiredStake) <= 0 {
 		log.Error().
 			Str("device_id", task.CreatorDeviceID).
@@ -361,6 +387,34 @@ func (h *TaskHandler) getTokenSymbol() string {
 		return h.config.BlockchainNetwork.TokenSymbol
 	}
 	return "TOKEN" // Default fallback
+}
+
+func (h *TaskHandler) maxUploadSizeBytes() int64 {
+	if h.config != nil && h.config.Server.MaxUploadSizeMB > 0 {
+		return int64(h.config.Server.MaxUploadSizeMB) * 1024 * 1024
+	}
+	return defaultMaxUploadSizeMB * 1024 * 1024
+}
+
+func ensureDockerEnvironment(env *models.EnvironmentConfig, command []string) *models.EnvironmentConfig {
+	if env == nil {
+		env = &models.EnvironmentConfig{}
+	}
+
+	env.Type = "docker"
+	if env.Config == nil {
+		env.Config = make(map[string]interface{})
+	}
+
+	if _, ok := env.Config["workdir"]; !ok {
+		env.Config["workdir"] = "/"
+	}
+
+	if len(command) > 0 {
+		env.Config["command"] = command
+	}
+
+	return env
 }
 
 func (h *TaskHandler) ListTasks(c *gin.Context) {

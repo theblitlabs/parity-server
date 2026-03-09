@@ -19,9 +19,10 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host     string `mapstructure:"HOST"`
-	Port     string `mapstructure:"PORT"`
-	Endpoint string `mapstructure:"ENDPOINT"`
+	Host            string `mapstructure:"HOST"`
+	Port            string `mapstructure:"PORT"`
+	Endpoint        string `mapstructure:"ENDPOINT"`
+	MaxUploadSizeMB int    `mapstructure:"MAX_UPLOAD_SIZE_MB"`
 }
 
 type DatabaseConfig struct {
@@ -146,9 +147,10 @@ func loadConfigFile(path string) (*Config, error) {
 	}
 
 	v.SetDefault("SERVER", map[string]interface{}{
-		"HOST":     v.GetString("SERVER_HOST"),
-		"PORT":     v.GetString("SERVER_PORT"),
-		"ENDPOINT": v.GetString("SERVER_ENDPOINT"),
+		"HOST":               v.GetString("SERVER_HOST"),
+		"PORT":               v.GetString("SERVER_PORT"),
+		"ENDPOINT":           v.GetString("SERVER_ENDPOINT"),
+		"MAX_UPLOAD_SIZE_MB": v.GetInt("SERVER_MAX_UPLOAD_SIZE_MB"),
 	})
 
 	v.SetDefault("DATABASE", map[string]interface{}{

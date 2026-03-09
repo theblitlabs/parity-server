@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -187,10 +188,24 @@ func (h *LLMHandler) CompletePrompt(c *gin.Context) {
 		return
 	}
 
-	err = h.llmService.CompletePrompt(c.Request.Context(), id, req.Response, req.PromptTokens, req.ResponseTokens, req.InferenceTime)
+	deviceID := c.GetHeader("X-Device-ID")
+	if deviceID == "" {
+		log.Error().Msg("Device ID is required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
+		return
+	}
+
+	err = h.llmService.CompletePrompt(c.Request.Context(), id, deviceID, req.Response, req.PromptTokens, req.ResponseTokens, req.InferenceTime)
 	if err != nil {
 		log.Error().Err(err).Str("prompt_id", promptID).Msg("Failed to complete prompt")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		switch {
+		case errors.Is(err, services.ErrPromptRunnerMismatch):
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		case errors.Is(err, services.ErrPromptTerminalState):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
 		return
 	}
 

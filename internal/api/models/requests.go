@@ -29,6 +29,9 @@ type CreateTaskRequest struct {
 	Description string                        `json:"description"`
 	Type        coremodels.TaskType           `json:"type"`
 	Image       string                        `json:"image"`
+	Command     []string                      `json:"command,omitempty"`
+	ImageHash   string                        `json:"image_hash,omitempty"`
+	CommandHash string                        `json:"command_hash,omitempty"`
 	Config      json.RawMessage               `json:"config"`
 	Environment *coremodels.EnvironmentConfig `json:"environment,omitempty"`
 	Reward      float64                       `json:"reward"`
