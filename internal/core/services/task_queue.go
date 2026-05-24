@@ -51,6 +51,12 @@ func (tq *TaskQueue) Start(ctx context.Context) {
 	log := gologger.WithComponent("task_queue")
 	log.Info().Msg("Starting task queue processor")
 
+	if err := tq.restoreQueuedPrompts(ctx); err != nil {
+		log.Error().Err(err).Msg("Failed to restore queued prompts from storage")
+	}
+
+	tq.processQueue(ctx)
+
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
@@ -92,7 +98,9 @@ func (tq *TaskQueue) QueueTask(promptID uuid.UUID, modelName string) {
 		MaxRetries: 5,
 	}
 
-	tq.queue = append(tq.queue, task)
+	if !tq.enqueueLocked(task) {
+		return
+	}
 
 	log := gologger.WithComponent("task_queue")
 	log.Info().
@@ -102,46 +110,120 @@ func (tq *TaskQueue) QueueTask(promptID uuid.UUID, modelName string) {
 		Msg("Task queued for processing")
 }
 
-func (tq *TaskQueue) processQueue(ctx context.Context) {
+func (tq *TaskQueue) enqueueLocked(task QueuedTask) bool {
+	for i := range tq.queue {
+		if tq.queue[i].PromptID != task.PromptID {
+			continue
+		}
+
+		if tq.queue[i].ModelName == "" {
+			tq.queue[i].ModelName = task.ModelName
+		}
+		if tq.queue[i].QueuedAt.IsZero() || (!task.QueuedAt.IsZero() && task.QueuedAt.Before(tq.queue[i].QueuedAt)) {
+			tq.queue[i].QueuedAt = task.QueuedAt
+		}
+		if task.MaxRetries > tq.queue[i].MaxRetries {
+			tq.queue[i].MaxRetries = task.MaxRetries
+		}
+		return false
+	}
+
+	tq.queue = append(tq.queue, task)
+	return true
+}
+
+func (tq *TaskQueue) restoreQueuedPrompts(ctx context.Context) error {
+	log := gologger.WithComponent("task_queue")
+
+	prompts, err := tq.promptRepo.GetQueuedPrompts(ctx)
+	if err != nil {
+		return err
+	}
+
+	if len(prompts) == 0 {
+		return nil
+	}
+
 	tq.mu.Lock()
+	restored := 0
+	for _, prompt := range prompts {
+		if prompt == nil {
+			continue
+		}
+
+		if tq.enqueueLocked(QueuedTask{
+			PromptID:   prompt.ID,
+			ModelName:  prompt.ModelName,
+			QueuedAt:   prompt.CreatedAt,
+			MaxRetries: 5,
+		}) {
+			restored++
+		}
+	}
+	queueSize := len(tq.queue)
+	tq.mu.Unlock()
+
+	log.Info().
+		Int("restored_count", restored).
+		Int("queue_size", queueSize).
+		Msg("Restored queued prompts from storage")
+
+	return nil
+}
+
+func (tq *TaskQueue) processQueue(ctx context.Context) {
+	tq.mu.RLock()
 	if len(tq.queue) == 0 {
-		tq.mu.Unlock()
+		tq.mu.RUnlock()
 		return
 	}
 
 	queueCopy := make([]QueuedTask, len(tq.queue))
 	copy(queueCopy, tq.queue)
-	tq.mu.Unlock()
+	tq.mu.RUnlock()
 
 	log := gologger.WithComponent("task_queue")
 
-	var processedTasks []int
+	processedPromptIDs := make(map[uuid.UUID]struct{})
+	updatedTasks := make(map[uuid.UUID]QueuedTask)
 
-	for i, task := range queueCopy {
-		processed := tq.processTask(ctx, task)
+	for _, task := range queueCopy {
+		updatedTask, processed := tq.processTask(ctx, task)
 		if processed {
-			processedTasks = append(processedTasks, i)
+			processedPromptIDs[task.PromptID] = struct{}{}
+			continue
 		}
+		updatedTasks[task.PromptID] = updatedTask
 	}
 
-	if len(processedTasks) > 0 {
-		tq.mu.Lock()
-		// Remove processed tasks from queue (in reverse order to maintain indices)
-		for i := len(processedTasks) - 1; i >= 0; i-- {
-			idx := processedTasks[i]
-			if idx < len(tq.queue) {
-				tq.queue = append(tq.queue[:idx], tq.queue[idx+1:]...)
-			}
+	if len(processedPromptIDs) == 0 && len(updatedTasks) == 0 {
+		return
+	}
+
+	tq.mu.Lock()
+	filteredQueue := make([]QueuedTask, 0, len(tq.queue))
+	for _, task := range tq.queue {
+		if _, remove := processedPromptIDs[task.PromptID]; remove {
+			continue
 		}
+		if updatedTask, ok := updatedTasks[task.PromptID]; ok {
+			task = updatedTask
+		}
+		filteredQueue = append(filteredQueue, task)
+	}
+	tq.queue = filteredQueue
+	remainingQueueSize := len(tq.queue)
+	tq.mu.Unlock()
+
+	if len(processedPromptIDs) > 0 {
 		log.Info().
-			Int("processed_count", len(processedTasks)).
-			Int("remaining_queue_size", len(tq.queue)).
+			Int("processed_count", len(processedPromptIDs)).
+			Int("remaining_queue_size", remainingQueueSize).
 			Msg("Processed queued tasks")
-		tq.mu.Unlock()
 	}
 }
 
-func (tq *TaskQueue) processTask(ctx context.Context, task QueuedTask) bool {
+func (tq *TaskQueue) processTask(ctx context.Context, task QueuedTask) (QueuedTask, bool) {
 	log := gologger.WithComponent("task_queue")
 
 	promptReq, err := tq.promptRepo.GetByID(ctx, task.PromptID)
@@ -150,7 +232,7 @@ func (tq *TaskQueue) processTask(ctx context.Context, task QueuedTask) bool {
 			Err(err).
 			Str("prompt_id", task.PromptID.String()).
 			Msg("Failed to get prompt request from database")
-		return true // Remove from queue as it's not recoverable
+		return task, true
 	}
 
 	if promptReq.Status != models.PromptStatusQueued {
@@ -158,7 +240,7 @@ func (tq *TaskQueue) processTask(ctx context.Context, task QueuedTask) bool {
 			Str("prompt_id", task.PromptID.String()).
 			Str("status", string(promptReq.Status)).
 			Msg("Prompt is no longer queued, removing from queue")
-		return true // Remove from queue as it's no longer queued
+		return task, true
 	}
 
 	runnerID, err := tq.runnerService.GetAvailableRunnerForModel(ctx, task.ModelName)
@@ -180,7 +262,7 @@ func (tq *TaskQueue) processTask(ctx context.Context, task QueuedTask) bool {
 					Str("prompt_id", task.PromptID.String()).
 					Msg("Failed to update prompt status to failed")
 			}
-			return true // Remove from queue
+			return task, true
 		}
 
 		log.Debug().
@@ -188,7 +270,7 @@ func (tq *TaskQueue) processTask(ctx context.Context, task QueuedTask) bool {
 			Str("model_name", task.ModelName).
 			Int("retry_count", task.RetryCount).
 			Msg("No runner available yet, will retry later")
-		return false // Keep in queue for retry
+		return task, false
 	}
 
 	promptReq.RunnerID = runnerID
@@ -199,7 +281,7 @@ func (tq *TaskQueue) processTask(ctx context.Context, task QueuedTask) bool {
 			Err(err).
 			Str("prompt_id", task.PromptID.String()).
 			Msg("Failed to update prompt status to processing")
-		return false // Keep in queue for retry
+		return task, false
 	}
 
 	go func() {
@@ -246,7 +328,7 @@ func (tq *TaskQueue) processTask(ctx context.Context, task QueuedTask) bool {
 		Str("runner_id", runnerID).
 		Msg("Queued task processed successfully")
 
-	return true // Remove from queue
+	return task, true
 }
 
 func (tq *TaskQueue) GetQueueSize() int {

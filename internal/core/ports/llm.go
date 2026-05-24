@@ -13,6 +13,7 @@ type PromptRepository interface {
 	Update(ctx context.Context, prompt *models.PromptRequest) error
 	ListByClientID(ctx context.Context, clientID string, limit, offset int) ([]*models.PromptRequest, error)
 	GetPendingPrompts(ctx context.Context) ([]*models.PromptRequest, error)
+	GetQueuedPrompts(ctx context.Context) ([]*models.PromptRequest, error)
 }
 
 type BillingRepository interface {

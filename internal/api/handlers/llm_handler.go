@@ -218,6 +218,56 @@ func (h *LLMHandler) CompletePrompt(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Prompt completed successfully"})
 }
 
+func (h *LLMHandler) FailPrompt(c *gin.Context) {
+	log := gologger.WithComponent("llm_handler")
+
+	promptID := c.Param("id")
+	if promptID == "" {
+		log.Error().Msg("Prompt ID is required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Prompt ID is required"})
+		return
+	}
+
+	id, err := uuid.Parse(promptID)
+	if err != nil {
+		log.Error().Err(err).Str("prompt_id", promptID).Msg("Invalid prompt ID format")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prompt ID format"})
+		return
+	}
+
+	var req struct {
+		Reason string `json:"reason" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Error().Err(err).Msg("Invalid request body")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	deviceID := c.GetHeader("X-Device-ID")
+	if deviceID == "" {
+		log.Error().Msg("Device ID is required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device ID is required"})
+		return
+	}
+
+	if err := h.llmService.FailPrompt(c.Request.Context(), id, deviceID, req.Reason); err != nil {
+		log.Error().Err(err).Str("prompt_id", promptID).Msg("Failed to fail prompt")
+		switch {
+		case errors.Is(err, services.ErrPromptRunnerMismatch):
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		case errors.Is(err, services.ErrPromptTerminalState):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Prompt marked as failed"})
+}
+
 func (h *LLMHandler) GetAvailableModels(c *gin.Context) {
 	log := gologger.WithComponent("llm_handler")
 

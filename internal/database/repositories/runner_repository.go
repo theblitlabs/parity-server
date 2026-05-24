@@ -90,6 +90,65 @@ func (r *RunnerRepository) Update(ctx context.Context, runner *models.Runner) (*
 	return r.Get(ctx, runner.DeviceID)
 }
 
+func (r *RunnerRepository) ListAll(ctx context.Context) ([]*models.Runner, error) {
+	return r.listWithDetails(ctx, 0)
+}
+
+func (r *RunnerRepository) ListRecent(ctx context.Context, limit int) ([]*models.Runner, error) {
+	return r.listWithDetails(ctx, limit)
+}
+
+func (r *RunnerRepository) CountByStatus(ctx context.Context) (map[models.RunnerStatus]int64, error) {
+	type statusCount struct {
+		Status models.RunnerStatus
+		Count  int64
+	}
+
+	var rows []statusCount
+	query := `
+		SELECT
+			CASE
+				WHEN status = ? THEN ?
+				WHEN status = ? OR task_id IS NOT NULL THEN ?
+				ELSE ?
+			END AS status,
+			COUNT(*) AS count
+		FROM runners
+		GROUP BY 1
+	`
+
+	if err := r.db.WithContext(ctx).
+		Raw(query,
+			models.RunnerStatusOffline, models.RunnerStatusOffline,
+			models.RunnerStatusBusy, models.RunnerStatusBusy,
+			models.RunnerStatusOnline).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	counts := make(map[models.RunnerStatus]int64, len(rows))
+	for _, row := range rows {
+		counts[row.Status] = row.Count
+	}
+
+	return counts, nil
+}
+
+func (r *RunnerRepository) listWithDetails(ctx context.Context, limit int) ([]*models.Runner, error) {
+	var runners []*models.Runner
+	query := r.db.WithContext(ctx).
+		Preload("Task").
+		Preload("ModelCapabilities").
+		Order("last_heartbeat DESC")
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	err := query.Find(&runners).Error
+	return runners, err
+}
+
 func (r *RunnerRepository) ListByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error) {
 	var runners []*models.Runner
 

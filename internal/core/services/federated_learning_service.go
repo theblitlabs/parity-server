@@ -118,6 +118,27 @@ func (s *FederatedLearningService) ListSessions(ctx context.Context, creatorAddr
 	return s.flSessionRepo.GetAll(ctx)
 }
 
+func (s *FederatedLearningService) ListRecentSessions(ctx context.Context, limit int) ([]*models.FederatedLearningSession, error) {
+	return s.flSessionRepo.ListRecent(ctx, limit)
+}
+
+func (s *FederatedLearningService) GetSessionCounts(ctx context.Context) (DashboardFLCounts, error) {
+	counts, err := s.flSessionRepo.CountByStatus(ctx)
+	if err != nil {
+		return DashboardFLCounts{}, err
+	}
+
+	summary := DashboardFLCounts{
+		Pending:   int(counts[models.FLSessionStatusPending]),
+		Active:    int(counts[models.FLSessionStatusActive]),
+		Completed: int(counts[models.FLSessionStatusCompleted]),
+		Failed:    int(counts[models.FLSessionStatusFailed]),
+	}
+	summary.Total = summary.Pending + summary.Active + summary.Completed + summary.Failed
+
+	return summary, nil
+}
+
 func (s *FederatedLearningService) autoSelectRunners(ctx context.Context, sessionID uuid.UUID) error {
 	log := log.With().
 		Str("component", "federated_learning_service").

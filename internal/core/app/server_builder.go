@@ -158,6 +158,7 @@ type ServerBuilder struct {
 	verificationService         *services.VerificationService
 	federatedLearningService    *services.FederatedLearningService
 	flRewardService             *services.FLRewardService
+	dashboardService            *services.DashboardService
 	stakeWallet                 *walletsdk.StakeWallet
 	taskHandler                 *handlers.TaskHandler
 	runnerHandler               *handlers.RunnerHandler
@@ -165,6 +166,7 @@ type ServerBuilder struct {
 	webhookHandler              *handlers.WebhookHandler
 	llmHandler                  *handlers.LLMHandler
 	federatedLearningHandler    *handlers.FederatedLearningHandler
+	dashboardHandler            *handlers.DashboardHandler
 	httpServer                  *http.Server
 	stopChannel                 chan struct{}
 	monitorCtx                  context.Context
@@ -457,6 +459,8 @@ func (sb *ServerBuilder) InitRouter() *ServerBuilder {
 	sb.llmHandler = handlers.NewLLMHandler(sb.llmService)
 	sb.federatedLearningHandler = handlers.NewFederatedLearningHandler(sb.federatedLearningService)
 	sb.reputationHandler = handlers.NewReputationHandler(sb.reputationService, sb.runnerMonitoringService)
+	sb.dashboardService = services.NewDashboardService(sb.taskService, sb.runnerService, sb.reputationService, sb.federatedLearningService, sb.llmService)
+	sb.dashboardHandler = handlers.NewDashboardHandler(sb.dashboardService)
 
 	router := api.NewRouter(
 		sb.taskHandler,
@@ -465,6 +469,7 @@ func (sb *ServerBuilder) InitRouter() *ServerBuilder {
 		sb.llmHandler,
 		sb.federatedLearningHandler,
 		sb.reputationHandler,
+		sb.dashboardHandler,
 		sb.config.Server.Endpoint,
 	)
 

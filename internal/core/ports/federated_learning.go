@@ -13,6 +13,8 @@ type FLSessionRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*models.FederatedLearningSession, error)
 	GetByCreator(ctx context.Context, creatorAddress string) ([]*models.FederatedLearningSession, error)
 	GetAll(ctx context.Context) ([]*models.FederatedLearningSession, error)
+	ListRecent(ctx context.Context, limit int) ([]*models.FederatedLearningSession, error)
+	CountByStatus(ctx context.Context) (map[models.FLSessionStatus]int64, error)
 	Update(ctx context.Context, session *models.FederatedLearningSession) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	AddParticipant(ctx context.Context, sessionID uuid.UUID, runnerID string) error

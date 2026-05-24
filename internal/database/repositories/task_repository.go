@@ -141,6 +141,16 @@ func (r *TaskRepository) ListByStatus(ctx context.Context, status models.TaskSta
 	return tasks, nil
 }
 
+func (r *TaskRepository) CountByStatus(ctx context.Context, status models.TaskStatus) (int64, error) {
+	var count int64
+	result := r.db.WithContext(ctx).Model(&models.Task{}).Where("status = ?", status).Count(&count)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+
+	return count, nil
+}
+
 func (r *TaskRepository) List(ctx context.Context, limit, offset int) ([]*models.Task, error) {
 	var dbTasks []models.Task
 	result := r.db.WithContext(ctx).Order("created_at DESC").Limit(limit).Offset(offset).Find(&dbTasks)
@@ -292,6 +302,25 @@ func (r *TaskRepository) GetTaskResult(ctx context.Context, taskID uuid.UUID) (*
 	}
 
 	return taskResult, nil
+}
+
+func (r *TaskRepository) GetTaskResults(ctx context.Context, taskIDs []uuid.UUID) (map[uuid.UUID]*models.TaskResult, error) {
+	results := make(map[uuid.UUID]*models.TaskResult)
+	if len(taskIDs) == 0 {
+		return results, nil
+	}
+
+	var dbResults []models.TaskResult
+	if err := r.db.WithContext(ctx).Where("task_id IN ?", taskIDs).Find(&dbResults).Error; err != nil {
+		return nil, err
+	}
+
+	for _, dbResult := range dbResults {
+		taskResult := dbResult
+		results[dbResult.TaskID] = &taskResult
+	}
+
+	return results, nil
 }
 
 // GetTasksByRunner retrieves tasks assigned to a specific runner with a limit

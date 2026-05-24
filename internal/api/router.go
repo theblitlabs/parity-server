@@ -19,7 +19,7 @@ type Router struct {
 	endpoint string
 }
 
-func NewRouter(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, federatedLearningHandler *handlers.FederatedLearningHandler, reputationHandler *handlers.ReputationHandler, endpoint string) *Router {
+func NewRouter(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, federatedLearningHandler *handlers.FederatedLearningHandler, reputationHandler *handlers.ReputationHandler, dashboardHandler *handlers.DashboardHandler, endpoint string) *Router {
 	engine := gin.New()
 
 	engine.Use(gin.Recovery())
@@ -30,11 +30,11 @@ func NewRouter(taskHandler *handlers.TaskHandler, runnerHandler *handlers.Runner
 		endpoint: endpoint,
 	}
 
-	r.registerRoutes(taskHandler, runnerHandler, webhookHandler, llmHandler, federatedLearningHandler, reputationHandler)
+	r.registerRoutes(taskHandler, runnerHandler, webhookHandler, llmHandler, federatedLearningHandler, reputationHandler, dashboardHandler)
 	return r
 }
 
-func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, federatedLearningHandler *handlers.FederatedLearningHandler, reputationHandler *handlers.ReputationHandler) {
+func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, federatedLearningHandler *handlers.FederatedLearningHandler, reputationHandler *handlers.ReputationHandler, dashboardHandler *handlers.DashboardHandler) {
 	// Root endpoint for server info
 	r.engine.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -43,10 +43,11 @@ func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler, runnerHandler
 			"status":      "running",
 			"description": "Parity decentralized computing server",
 			"endpoints": gin.H{
-				"api":    r.endpoint + "/v1",
-				"health": r.endpoint + "/v1/health",
-				"llm":    r.endpoint + "/v1/llm",
-				"tasks":  r.endpoint + "/v1/tasks",
+				"api":       r.endpoint + "/v1",
+				"health":    r.endpoint + "/v1/health",
+				"llm":       r.endpoint + "/v1/llm",
+				"tasks":     r.endpoint + "/v1/tasks",
+				"dashboard": r.endpoint + "/v1/dashboard/overview",
 			},
 		})
 	})
@@ -61,7 +62,7 @@ func (r *Router) registerRoutes(taskHandler *handlers.TaskHandler, runnerHandler
 
 	api := r.engine.Group(r.endpoint)
 	v1Group := api.Group("/v1")
-	v1.RegisterRoutes(v1Group, taskHandler, runnerHandler, webhookHandler, llmHandler, federatedLearningHandler, reputationHandler)
+	v1.RegisterRoutes(v1Group, taskHandler, runnerHandler, webhookHandler, llmHandler, federatedLearningHandler, reputationHandler, dashboardHandler)
 }
 
 func (r *Router) Engine() *gin.Engine {

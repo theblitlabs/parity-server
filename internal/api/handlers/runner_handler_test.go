@@ -112,6 +112,16 @@ func (r *runnerHandlerTaskRepo) ListByStatus(ctx context.Context, status models.
 	return tasks, nil
 }
 
+func (r *runnerHandlerTaskRepo) CountByStatus(ctx context.Context, status models.TaskStatus) (int64, error) {
+	var count int64
+	for _, task := range r.tasks {
+		if task.Status == status {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (r *runnerHandlerTaskRepo) GetAll(ctx context.Context) ([]models.Task, error) {
 	return nil, nil
 }
@@ -122,6 +132,10 @@ func (r *runnerHandlerTaskRepo) SaveTaskResult(ctx context.Context, result *mode
 
 func (r *runnerHandlerTaskRepo) GetTaskResult(ctx context.Context, taskID uuid.UUID) (*models.TaskResult, error) {
 	return nil, nil
+}
+
+func (r *runnerHandlerTaskRepo) GetTaskResults(ctx context.Context, taskIDs []uuid.UUID) (map[uuid.UUID]*models.TaskResult, error) {
+	return map[uuid.UUID]*models.TaskResult{}, nil
 }
 
 func (r *runnerHandlerTaskRepo) GetTasksByRunner(ctx context.Context, runnerID string, limit int) ([]*models.Task, error) {

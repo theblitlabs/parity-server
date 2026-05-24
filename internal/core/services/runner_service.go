@@ -22,6 +22,9 @@ type RunnerRepository interface {
 	Get(ctx context.Context, deviceID string) (*models.Runner, error)
 	CreateOrUpdate(ctx context.Context, runner *models.Runner) (*models.Runner, error)
 	Update(ctx context.Context, runner *models.Runner) (*models.Runner, error)
+	ListAll(ctx context.Context) ([]*models.Runner, error)
+	ListRecent(ctx context.Context, limit int) ([]*models.Runner, error)
+	CountByStatus(ctx context.Context) (map[models.RunnerStatus]int64, error)
 	ListByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error)
 	UpdateRunnersToOffline(ctx context.Context, heartbeatTimeout time.Duration) (int64, []string, error)
 	GetOnlineRunners(ctx context.Context) ([]*models.Runner, error)
@@ -143,6 +146,39 @@ func (s *RunnerService) CreateOrUpdateRunner(ctx context.Context, runner *models
 
 func (s *RunnerService) UpdateRunner(ctx context.Context, runner *models.Runner) (*models.Runner, error) {
 	return s.repo.Update(ctx, runner)
+}
+
+func (s *RunnerService) ListRunners(ctx context.Context) ([]*models.Runner, error) {
+	return s.repo.ListAll(ctx)
+}
+
+func (s *RunnerService) ListRecentRunners(ctx context.Context, limit int) ([]*models.Runner, error) {
+	return s.repo.ListRecent(ctx, limit)
+}
+
+func (s *RunnerService) GetRunnerCounts(ctx context.Context) (DashboardRunnerCounts, error) {
+	statusCounts, err := s.repo.CountByStatus(ctx)
+	if err != nil {
+		return DashboardRunnerCounts{}, err
+	}
+
+	counts := DashboardRunnerCounts{}
+	for status, count := range statusCounts {
+		switch status {
+		case models.RunnerStatusOnline:
+			counts.Online += int(count)
+		case models.RunnerStatusBusy:
+			counts.Busy += int(count)
+		case models.RunnerStatusOffline:
+			counts.Offline += int(count)
+		default:
+			counts.Total += int(count)
+			continue
+		}
+		counts.Total += int(count)
+	}
+
+	return counts, nil
 }
 
 func (s *RunnerService) ListRunnersByStatus(ctx context.Context, status models.RunnerStatus) ([]*models.Runner, error) {

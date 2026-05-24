@@ -125,19 +125,8 @@ func (s *LLMService) CompletePrompt(ctx context.Context, promptID uuid.UUID, run
 		return fmt.Errorf("failed to update prompt request: %w", err)
 	}
 
-	// Free up the runner by clearing its TaskID
-	if promptReq.RunnerID != "" {
-		runner, err := s.runnerRepo.GetRunnerByDeviceID(ctx, promptReq.RunnerID)
-		if err != nil {
-			log.Error().Err(err).Str("runner_id", promptReq.RunnerID).Msg("Failed to get runner for cleanup")
-		} else {
-			runner.TaskID = nil
-			if _, err := s.runnerService.UpdateRunner(ctx, runner); err != nil {
-				log.Error().Err(err).Str("runner_id", promptReq.RunnerID).Msg("Failed to clear runner TaskID")
-			} else {
-				log.Info().Str("runner_id", promptReq.RunnerID).Msg("Runner freed after prompt completion")
-			}
-		}
+	if err := s.releasePromptRunner(ctx, promptReq.RunnerID); err != nil {
+		log.Error().Err(err).Str("runner_id", promptReq.RunnerID).Msg("Failed to clear runner TaskID")
 	}
 
 	metric := models.NewBillingMetric(
@@ -161,6 +150,74 @@ func (s *LLMService) CompletePrompt(ctx context.Context, promptID uuid.UUID, run
 		Msg("Prompt completed with billing metrics")
 
 	return nil
+}
+
+func (s *LLMService) FailPrompt(ctx context.Context, promptID uuid.UUID, runnerID, reason string) error {
+	log := gologger.WithComponent("llm_service")
+
+	promptReq, err := s.promptRepo.GetByID(ctx, promptID)
+	if err != nil {
+		log.Error().Err(err).Str("prompt_id", promptID.String()).Msg("Failed to get prompt request")
+		return fmt.Errorf("failed to get prompt request: %w", err)
+	}
+
+	if runnerID == "" {
+		return fmt.Errorf("runner ID is required")
+	}
+
+	if promptReq.RunnerID != "" && promptReq.RunnerID != runnerID {
+		return ErrPromptRunnerMismatch
+	}
+
+	if promptReq.Status == models.PromptStatusCompleted {
+		return ErrPromptTerminalState
+	}
+
+	if promptReq.Status == models.PromptStatusFailed {
+		log.Info().
+			Str("prompt_id", promptID.String()).
+			Str("runner_id", runnerID).
+			Msg("Ignoring duplicate prompt failure")
+		return nil
+	}
+
+	now := time.Now()
+	promptReq.Status = models.PromptStatusFailed
+	promptReq.CompletedAt = &now
+	if reason != "" {
+		promptReq.Response = reason
+	}
+
+	if err := s.promptRepo.Update(ctx, promptReq); err != nil {
+		log.Error().Err(err).Str("prompt_id", promptID.String()).Msg("Failed to update prompt request")
+		return fmt.Errorf("failed to update prompt request: %w", err)
+	}
+
+	if err := s.releasePromptRunner(ctx, promptReq.RunnerID); err != nil {
+		log.Error().Err(err).Str("runner_id", promptReq.RunnerID).Msg("Failed to clear runner TaskID")
+	}
+
+	log.Info().
+		Str("prompt_id", promptID.String()).
+		Str("runner_id", runnerID).
+		Msg("Prompt marked as failed")
+
+	return nil
+}
+
+func (s *LLMService) releasePromptRunner(ctx context.Context, runnerID string) error {
+	if runnerID == "" {
+		return nil
+	}
+
+	runner, err := s.runnerRepo.GetRunnerByDeviceID(ctx, runnerID)
+	if err != nil {
+		return err
+	}
+
+	runner.TaskID = nil
+	_, err = s.runnerService.UpdateRunner(ctx, runner)
+	return err
 }
 
 func (s *LLMService) GetPrompt(ctx context.Context, promptID uuid.UUID) (*models.PromptRequest, error) {

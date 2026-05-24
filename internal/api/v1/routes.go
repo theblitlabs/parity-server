@@ -47,6 +47,7 @@ func registerLLMRoutes(router *gin.RouterGroup, llmHandler *handlers.LLMHandler)
 		llm.GET("/prompts", llmHandler.ListPrompts)
 		llm.GET("/prompts/:id", llmHandler.GetPrompt)
 		llm.POST("/prompts/:id/complete", llmHandler.CompletePrompt)
+		llm.POST("/prompts/:id/fail", llmHandler.FailPrompt)
 		llm.GET("/billing/metrics", llmHandler.GetBillingMetrics)
 	}
 }
@@ -82,10 +83,18 @@ func registerReputationRoutes(router *gin.RouterGroup, reputationHandler *handle
 	}
 }
 
-func RegisterRoutes(api *gin.RouterGroup, taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, flHandler *handlers.FederatedLearningHandler, reputationHandler *handlers.ReputationHandler) {
+func registerDashboardRoutes(router *gin.RouterGroup, dashboardHandler *handlers.DashboardHandler) {
+	dashboard := router.Group("/dashboard")
+	{
+		dashboard.GET("/overview", dashboardHandler.GetOverview)
+	}
+}
+
+func RegisterRoutes(api *gin.RouterGroup, taskHandler *handlers.TaskHandler, runnerHandler *handlers.RunnerHandler, webhookHandler *handlers.WebhookHandler, llmHandler *handlers.LLMHandler, flHandler *handlers.FederatedLearningHandler, reputationHandler *handlers.ReputationHandler, dashboardHandler *handlers.DashboardHandler) {
 	registerTaskRoutes(api, taskHandler)
 	registerRunnerRoutes(api, taskHandler, runnerHandler, webhookHandler)
 	registerLLMRoutes(api, llmHandler)
 	registerFederatedLearningRoutes(api, flHandler)
 	registerReputationRoutes(api, reputationHandler)
+	registerDashboardRoutes(api, dashboardHandler)
 }

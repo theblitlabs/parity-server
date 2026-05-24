@@ -44,6 +44,39 @@ func (r *FLSessionRepository) GetAll(ctx context.Context) ([]*models.FederatedLe
 	return sessions, err
 }
 
+func (r *FLSessionRepository) ListRecent(ctx context.Context, limit int) ([]*models.FederatedLearningSession, error) {
+	var sessions []*models.FederatedLearningSession
+	query := r.db.WithContext(ctx).Order("updated_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	err := query.Find(&sessions).Error
+	return sessions, err
+}
+
+func (r *FLSessionRepository) CountByStatus(ctx context.Context) (map[models.FLSessionStatus]int64, error) {
+	type statusCount struct {
+		Status models.FLSessionStatus
+		Count  int64
+	}
+
+	var rows []statusCount
+	if err := r.db.WithContext(ctx).
+		Model(&models.FederatedLearningSession{}).
+		Select("status, COUNT(*) AS count").
+		Group("status").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	counts := make(map[models.FLSessionStatus]int64, len(rows))
+	for _, row := range rows {
+		counts[row.Status] = row.Count
+	}
+
+	return counts, nil
+}
+
 func (r *FLSessionRepository) Update(ctx context.Context, session *models.FederatedLearningSession) error {
 	return r.db.WithContext(ctx).Save(session).Error
 }

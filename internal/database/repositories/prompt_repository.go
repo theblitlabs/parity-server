@@ -56,3 +56,12 @@ func (r *PromptRepository) GetPendingPrompts(ctx context.Context) ([]*models.Pro
 		Find(&prompts).Error
 	return prompts, err
 }
+
+func (r *PromptRepository) GetQueuedPrompts(ctx context.Context) ([]*models.PromptRequest, error) {
+	var prompts []*models.PromptRequest
+	err := r.db.WithContext(ctx).
+		Where("status = ?", models.PromptStatusQueued).
+		Order("created_at ASC").
+		Find(&prompts).Error
+	return prompts, err
+}

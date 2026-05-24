@@ -38,27 +38,43 @@ type WebhookService struct {
 	taskService  ports.TaskServicer
 	stopCh       chan struct{}
 	taskUpdateCh chan struct{}
+	workerOnce   sync.Once
 }
 
 func NewWebhookService(taskService ports.TaskServicer) *WebhookService {
 	return &WebhookService{
 		webhooks:     make(map[string]WebhookRegistration),
 		taskService:  taskService,
-		taskUpdateCh: make(chan struct{}, 100),
+		taskUpdateCh: make(chan struct{}, 1),
 	}
 }
 
 func (s *WebhookService) SetStopChannel(stopCh chan struct{}) {
 	s.stopCh = stopCh
+	if stopCh != nil {
+		s.workerOnce.Do(func() {
+			go s.taskUpdateWorker()
+		})
+	}
 }
 
 func (s *WebhookService) NotifyTaskUpdate() {
 	select {
 	case s.taskUpdateCh <- struct{}{}:
-		go s.notifyWebhooks()
 	case <-s.stopCh:
 		return
 	default:
+	}
+}
+
+func (s *WebhookService) taskUpdateWorker() {
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-s.taskUpdateCh:
+			s.notifyWebhooks()
+		}
 	}
 }
 

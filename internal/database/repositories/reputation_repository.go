@@ -166,7 +166,7 @@ func (r *ReputationRepository) GetReputationStats(ctx context.Context) (map[stri
 	// Average reputation score
 	var avgScore float64
 	if err := r.db.WithContext(ctx).Model(&models.RunnerReputation{}).
-		Select("AVG(reputation_score)").Scan(&avgScore).Error; err != nil {
+		Select("COALESCE(AVG(reputation_score), 0)").Scan(&avgScore).Error; err != nil {
 		return nil, err
 	}
 	stats["average_reputation_score"] = avgScore

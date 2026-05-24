@@ -34,10 +34,21 @@ type TaskRepository interface {
 	Update(ctx context.Context, task *models.Task) error
 	List(ctx context.Context, limit, offset int) ([]*models.Task, error)
 	ListByStatus(ctx context.Context, status models.TaskStatus) ([]*models.Task, error)
+	CountByStatus(ctx context.Context, status models.TaskStatus) (int64, error)
 	GetAll(ctx context.Context) ([]models.Task, error)
 	SaveTaskResult(ctx context.Context, result *models.TaskResult) error
 	GetTaskResult(ctx context.Context, taskID uuid.UUID) (*models.TaskResult, error)
+	GetTaskResults(ctx context.Context, taskIDs []uuid.UUID) (map[uuid.UUID]*models.TaskResult, error)
 	GetTasksByRunner(ctx context.Context, runnerID string, limit int) ([]*models.Task, error)
+}
+
+type TaskStatusCounts struct {
+	Total       int `json:"total"`
+	Pending     int `json:"pending"`
+	Running     int `json:"running"`
+	Completed   int `json:"completed"`
+	Failed      int `json:"failed"`
+	NotVerified int `json:"not_verified"`
 }
 
 type TaskService struct {
@@ -230,6 +241,54 @@ func (s *TaskService) GetTasks(ctx context.Context) ([]models.Task, error) {
 	return tasks, nil
 }
 
+func (s *TaskService) ListTasks(ctx context.Context, limit, offset int) ([]*models.Task, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	return s.repo.List(ctx, limit, offset)
+}
+
+func (s *TaskService) GetTaskCounts(ctx context.Context) (TaskStatusCounts, error) {
+	statuses := []models.TaskStatus{
+		models.TaskStatusPending,
+		models.TaskStatusRunning,
+		models.TaskStatusCompleted,
+		models.TaskStatusFailed,
+		models.TaskStatusNotVerified,
+	}
+
+	counts := TaskStatusCounts{}
+	for _, status := range statuses {
+		count, err := s.repo.CountByStatus(ctx, status)
+		if err != nil {
+			return TaskStatusCounts{}, err
+		}
+
+		switch status {
+		case models.TaskStatusPending:
+			counts.Pending = int(count)
+		case models.TaskStatusRunning:
+			counts.Running = int(count)
+		case models.TaskStatusCompleted:
+			counts.Completed = int(count)
+		case models.TaskStatusFailed:
+			counts.Failed = int(count)
+		case models.TaskStatusNotVerified:
+			counts.NotVerified = int(count)
+		}
+	}
+
+	counts.Total = counts.Pending + counts.Running + counts.Completed + counts.Failed + counts.NotVerified
+	return counts, nil
+}
+
 func (s *TaskService) StartTask(ctx context.Context, id string) error {
 	log := gologger.WithComponent("task_service")
 	log.Debug().Str("task_id", id).Msg("Attempting to start task")
@@ -383,6 +442,33 @@ func (s *TaskService) GetTaskResult(ctx context.Context, taskID string) (*models
 	return result, nil
 }
 
+func (s *TaskService) GetTaskResults(ctx context.Context, taskIDs []string) (map[string]*models.TaskResult, error) {
+	if len(taskIDs) == 0 {
+		return map[string]*models.TaskResult{}, nil
+	}
+
+	parsedTaskIDs := make([]uuid.UUID, 0, len(taskIDs))
+	for _, taskID := range taskIDs {
+		taskUUID, err := uuid.Parse(taskID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid task ID format: %w", err)
+		}
+		parsedTaskIDs = append(parsedTaskIDs, taskUUID)
+	}
+
+	results, err := s.repo.GetTaskResults(ctx, parsedTaskIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	resultMap := make(map[string]*models.TaskResult, len(results))
+	for taskID, result := range results {
+		resultMap[taskID.String()] = result
+	}
+
+	return resultMap, nil
+}
+
 func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskResult) error {
 	log := gologger.WithComponent("task_service")
 
@@ -494,7 +580,9 @@ func (s *TaskService) SaveTaskResult(ctx context.Context, result *models.TaskRes
 	}
 
 	targetStatus := models.TaskStatusCompleted
-	if result.VerificationStatus == "failed" {
+	if result.ExitCode != 0 {
+		targetStatus = models.TaskStatusFailed
+	} else if result.VerificationStatus == "failed" {
 		targetStatus = models.TaskStatusNotVerified
 		log.Warn().
 			Str("task_id", result.TaskID.String()).
@@ -842,6 +930,13 @@ func (s *TaskService) countAssignedRunners(task *models.Task, runners []*models.
 
 func (s *TaskService) assignTaskToRunner(ctx context.Context, task *models.Task, runner *models.Runner) error {
 	log := gologger.WithComponent("task_service")
+
+	taskAssignKey := "task_assign_" + task.ID.String()
+	if _, exists := s.notificationInProgress.LoadOrStore(taskAssignKey, true); exists {
+		return ErrTaskUnavailable
+	}
+	defer s.notificationInProgress.Delete(taskAssignKey)
+
 	runnerAssignKey := "runner_assign_" + runner.DeviceID
 	if _, exists := s.notificationInProgress.LoadOrStore(runnerAssignKey, true); exists {
 		return ErrRunnerUnavailable

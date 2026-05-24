@@ -45,6 +45,16 @@ func (r *inMemoryPromptRepo) GetPendingPrompts(ctx context.Context) ([]*models.P
 	return nil, nil
 }
 
+func (r *inMemoryPromptRepo) GetQueuedPrompts(ctx context.Context) ([]*models.PromptRequest, error) {
+	prompts := make([]*models.PromptRequest, 0)
+	for _, prompt := range r.prompts {
+		if prompt.Status == models.PromptStatusQueued {
+			prompts = append(prompts, clonePrompt(prompt))
+		}
+	}
+	return prompts, nil
+}
+
 type inMemoryBillingRepo struct {
 	createCalls int
 	metrics     []*models.BillingMetric
@@ -141,5 +151,49 @@ func TestCompletePromptIsIdempotentAfterSuccess(t *testing.T) {
 
 	if storedPrompt.Status != models.PromptStatusCompleted {
 		t.Fatalf("prompt status = %q, want %q", storedPrompt.Status, models.PromptStatusCompleted)
+	}
+}
+
+func TestFailPromptMarksPromptFailedAndClearsRunner(t *testing.T) {
+	promptRepo := newInMemoryPromptRepo()
+	billingRepo := &inMemoryBillingRepo{}
+	runnerRepo := newInMemoryRunnerRepo()
+	runnerService := NewRunnerService(runnerRepo)
+	service := NewLLMService(promptRepo, billingRepo, runnerRepo, runnerService, nil)
+
+	taskID := uuid.New()
+	runnerRepo.runners["runner-1"] = &models.Runner{
+		DeviceID: "runner-1",
+		Status:   models.RunnerStatusBusy,
+		TaskID:   &taskID,
+	}
+
+	prompt := models.NewPromptRequest("client-1", "hello", "model-a", "0xabc")
+	prompt.RunnerID = "runner-1"
+	prompt.Status = models.PromptStatusProcessing
+	promptRepo.prompts[prompt.ID] = clonePrompt(prompt)
+
+	if err := service.FailPrompt(context.Background(), prompt.ID, "runner-1", "executor failed"); err != nil {
+		t.Fatalf("FailPrompt() error = %v", err)
+	}
+
+	storedPrompt, err := promptRepo.GetByID(context.Background(), prompt.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+
+	if storedPrompt.Status != models.PromptStatusFailed {
+		t.Fatalf("prompt status = %q, want %q", storedPrompt.Status, models.PromptStatusFailed)
+	}
+	if storedPrompt.Response != "executor failed" {
+		t.Fatalf("prompt response = %q, want failure reason", storedPrompt.Response)
+	}
+
+	storedRunner, err := runnerRepo.Get(context.Background(), "runner-1")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if storedRunner.TaskID != nil {
+		t.Fatalf("expected runner task ID to be cleared, got %s", storedRunner.TaskID.String())
 	}
 }
